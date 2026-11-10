@@ -198,27 +198,20 @@ terraform {
 ```text
 terraform-aws-nitro-sandbox/
 ├── modules/
-│   ├── eks/                   # Complete EKS Auto Mode & Nitro Sandbox module
-│   │   ├── main.tf            # Module aggregation
-│   │   ├── vpc.tf             # Multi-AZ VPC, private/public subnets, NAT Gateway
-│   │   ├── iam.tf             # Cluster, node (minimal), and Pod Identity roles
-│   │   ├── kms.tf             # Envelope encryption & NSM attestation policy
-│   │   ├── eks.tf             # EKS cluster with Auto Mode, Access Entries
-│   │   ├── kubernetes.tf      # RuntimeClasses, namespace, network policies, workload
-│   │   ├── variables.tf       # Validated module variables
-│   │   ├── outputs.tf         # Module outputs
-│   │   └── versions.tf        # Provider version constraints
-│   ├── ecs/                   # ECS Cluster & CloudControl Nitro Sandbox bridge
-│   └── ec2/                   # Hardened EC2 Nitro host with Enclaves enabled
+│   └── eks/                   # Complete EKS Auto Mode & Nitro Sandbox module
+│       ├── vpc.tf             # Multi-AZ VPC, private/public subnets, NAT Gateway, Flow Logs
+│       ├── iam.tf             # Minimal cluster, node, and Pod Identity roles
+│       ├── kms.tf             # Envelope encryption & NSM attestation policy
+│       ├── eks.tf             # EKS cluster with Auto Mode, Access Entries
+│       ├── kubernetes.tf      # RuntimeClasses, namespace, network policies, sample workload
+│       ├── variables.tf       # Validated module variables
+│       ├── outputs.tf         # Module outputs
+│       └── versions.tf        # Provider version constraints
 ├── examples/
 │   ├── eks-isolated/          # End-to-end example: Isolated Sandbox on EKS
-│   ├── eks-confidential/      # End-to-end example: Confidential Sandbox with KMS Attestation
-│   ├── ecs/                   # Standalone ECS example
-│   └── ec2/                   # Standalone EC2 host example
+│   └── eks-confidential/      # End-to-end example: Confidential Sandbox with KMS Attestation
 ├── tests/
-│   ├── eks_validation.tftest.hcl  # Native Terraform unit tests for EKS module
-│   ├── ecs_validation.tftest.hcl  # Native Terraform unit tests for ECS module
-│   └── ec2_validation.tftest.hcl  # Native Terraform unit tests for EC2 module
+│   └── eks_validation.tftest.hcl  # Native Terraform unit tests for EKS module
 ├── scripts/
 │   ├── verify_sandbox.sh      # Pod isolation & runtime class verification script
 │   ├── verify_attestation.sh  # Cryptographic NSM & KMS attestation workflow check
@@ -228,7 +221,6 @@ terraform-aws-nitro-sandbox/
 │   ├── compatibility_matrix.md     # Detailed service & provider matrix
 │   ├── security_and_threat_model.md # Threat model & defense-in-depth guide
 │   ├── cost_and_performance.md     # Cost model & benchmark methodology
-│   ├── aws_provider_proposal.md    # Upstream Terraform AWS Provider PR proposal
 │   └── article_outline.md          # Full publication-ready technical article
 ├── .github/
 │   └── workflows/
@@ -462,12 +454,13 @@ make clean
 
 ---
 
-## 16. Known Limitations & Upstream Provider Contributions
+## 16. Known Limitations & Operational Considerations
 
-### Amazon ECS Task Definition Gap
-As documented in [`docs/compatibility_matrix.md`](docs/compatibility_matrix.md), the official Terraform AWS Provider (`hashicorp/terraform-provider-aws`) currently lacks the `trusted_execution_configuration` block inside `aws_ecs_task_definition`.
-- **Workaround Implemented**: This repository provides a native declarative bridge via `aws_cloudcontrolapi_resource` using type `AWS::ECS::TaskDefinition` without requiring `local-exec` scripts.
-- **Upstream Contribution**: We have formulated a complete Go schema enhancement proposal, parser implementation, and acceptance test suite in [`docs/aws_provider_proposal.md`](docs/aws_provider_proposal.md) ready for submission to `hashicorp/terraform-provider-aws`.
+### Cold-Start Latency
+Booting a dedicated guest Linux kernel and attaching `virtio` network interfaces introduces a ~1.2s - 2.2s startup latency (compared to ~400ms for standard `runc`). For long-running microservices, multi-tenant web applications, or persistent worker loops, this overhead is negligible. For sub-second ephemeral serverless bursts, this initialization latency should be accounted for.
+
+### Supported Instance Types
+Nitro Sandboxes require AWS Nitro-based EC2 instance families supporting Nitro Enclaves and MicroVM hardware partitioning (e.g. `c6i`, `m6i`, `r6i`, `c7g`, `m7g`, `c6a`). EKS Auto Mode manages this automatically by matching workloads to compatible node pools.
 
 ---
 
