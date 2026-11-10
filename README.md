@@ -212,9 +212,7 @@ terraform-aws-nitro-sandbox/
 ├── tests/
 │   └── eks_validation.tftest.hcl  # Native Terraform unit tests for EKS module
 ├── scripts/
-│   ├── verify_sandbox.sh      # Pod isolation & runtime class verification script
-│   ├── verify_attestation.sh  # Cryptographic NSM & KMS attestation workflow check
-│   └── benchmark.sh           # Comparative benchmark harness (runc vs sandbox)
+│   └── verify_sandbox.sh      # Pod isolation & runtime class verification script
 ├── docs/
 │   ├── architecture.md             # Deep dive architecture reference
 │   ├── compatibility_matrix.md     # Detailed service & provider matrix
@@ -435,7 +433,7 @@ See [`docs/cost_and_performance.md`](docs/cost_and_performance.md) for detailed 
 
 ### Issue 3: KMS Decrypt Access Denied in Confidential Mode
 - **Cause**: The container image digest did not match `confidential_expected_image_digest` in the KMS key policy condition.
-- **Resolution**: Re-compute the SHA-384 digest of your container image using `scripts/verify_attestation.sh` and update `terraform.tfvars`.
+- **Resolution**: Re-compute the SHA-384 digest of your container image (e.g. using `sha384sum` or container image hash) and update `confidential_expected_image_digest` in `terraform.tfvars`.
 
 ---
 
