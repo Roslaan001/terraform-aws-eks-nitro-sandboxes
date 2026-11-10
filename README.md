@@ -1,11 +1,11 @@
-# Terraform-Managed AWS Nitro Sandboxes for Amazon EKS, ECS, and EC2
+# Production-Ready AWS Nitro Sandboxes on Amazon EKS Auto Mode
 
 [![Terraform Validation](https://github.com/aws-samples/terraform-aws-nitro-sandbox/actions/workflows/ci.yml/badge.svg)](https://github.com/aws-samples/terraform-aws-nitro-sandbox/actions)
 [![Terraform >= 1.6](https://img.shields.io/badge/Terraform->=1.6.0-623CE4.svg?logo=terraform)](https://www.terraform.io/)
 [![AWS Provider >= 5.80](https://img.shields.io/badge/AWS%20Provider->=5.80.0-FF9900.svg?logo=amazon-aws)](https://registry.terraform.io/providers/hashicorp/aws/latest)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-An enterprise-grade, verified Infrastructure-as-Code implementation provisioning **AWS Nitro Sandboxes** across Amazon Elastic Kubernetes Service (EKS), Amazon Elastic Container Service (ECS), and Amazon Elastic Compute Cloud (EC2) using HashiCorp Terraform.
+An enterprise-grade, verified Infrastructure-as-Code implementation provisioning **AWS Nitro Sandboxes** on **Amazon Elastic Kubernetes Service (Amazon EKS) with EKS Auto Mode** using HashiCorp Terraform.
 
 ---
 
@@ -40,9 +40,8 @@ Traditionally, security teams faced an uncompromising choice when deploying mult
 **AWS Nitro Sandboxes** resolve this trade-off by executing each pod or task inside a dedicated, lightweight virtual machine (microVM) directly powered by the AWS Nitro Hypervisor on a single shared EC2 instance.
 
 This repository delivers:
-- **Primary Priority**: A production-ready, fully automated Terraform module for **Amazon EKS with EKS Auto Mode**, registering native `RuntimeClass` resources (`isolated-sandbox` and `confidential-sandbox`), least-privilege IAM, envelope KMS encryption, and Kubernetes NetworkPolicies.
-- **Secondary Implementations**: Verified modules and architectural bridges for **Amazon ECS** and **Amazon EC2**.
-- **Automated Validation Suite**: Terraform tests (`terraform test`), TFLint rules, Trivy IaC security scans, and operational verification scripts.
+- **Production-Ready Amazon EKS Auto Mode Module**: Fully automated Terraform module registering native `RuntimeClass` resources (`isolated-sandbox` and `confidential-sandbox`), least-privilege IAM, envelope KMS encryption with CloudWatch integration, and Kubernetes NetworkPolicies.
+- **Automated Validation Suite**: Native Terraform tests (`terraform test`), TFLint rules, Trivy IaC security scans, and operational verification scripts (`scripts/verify_sandbox.sh`).
 
 ---
 
@@ -140,13 +139,13 @@ flowchart TD
 
 ---
 
-## 4. Supported Services & Compatibility Matrix
+## 4. Supported Architecture & Capabilities
 
-| Service | AWS Capability | Terraform Support | Implementation Approach | Verified Limitations |
+| Service Component | AWS Capability | Terraform Support | Implementation Approach | Verified Notes |
 |---|---|---|---|---|
-| **Amazon EKS** | **GA / Native**: Hardware-isolated microVMs per pod via `RuntimeClass` (`isolated-sandbox`, `confidential-sandbox`). Dynamic node provisioning on EKS Auto Mode. | **Full / Native**: `hashicorp/aws` supports EKS Auto Mode (`compute_config`), EKS Access Entries, Pod Identity. `hashicorp/kubernetes` supports `kubernetes_runtime_class_v1`, `kubernetes_deployment_v1`, `kubernetes_namespace`. | Native Terraform modules (`aws` + `kubernetes` providers). No workarounds or `local-exec` required. | Workloads must run on Nitro-supported instance types. Confidential mode requires container integration with `/dev/nsm` attestation client. |
-| **Amazon ECS** | **GA / Native API**: Hardware-isolated microVMs per task via `TrustedExecutionConfiguration` (`IsolationMode = "ISOLATED_SANDBOX" \| "CONFIDENTIAL_SANDBOX"`). | **Partial / Provider Gap**: `hashicorp/aws` (v6.72.0) `aws_ecs_task_definition` resource does not yet expose `trusted_execution_configuration` in its schema. | Infrastructure (VPC, Cluster, IAM, Security Groups) managed natively via Terraform. Nitro task definitions registered via `aws_cloudcontrolapi_resource` (declarative AWS Cloud Control API) or upstream PR proposal. | Schema gap in `hashicorp/aws`. Upstream PR submitted to add first-class HCL block. |
-| **Amazon EC2** | **Native**: Direct microVM / lightweight sandbox execution on Nitro instances using Firecracker or Nitro Enclaves CLI with custom AMIs and orchestration. | **Full / Native**: `aws_instance`, `aws_launch_template`, `enclave_options { enabled = true }`, IAM instance profile, encrypted EBS, and IMDSv2 enforcement. | Terraform provisions hardened Nitro host with Enclaves enabled, SSM access, and user-data microVM supervisor bootstrap. | Standalone EC2 requires custom or third-party daemon (e.g. Firecracker API or custom containerd) to manage individual sandbox lifecycles inside the host. |
+| **Amazon EKS (Auto Mode)** | **Native / GA**: Hardware-isolated microVMs per pod via `RuntimeClass` (`isolated-sandbox`, `confidential-sandbox`). Dynamic node provisioning on EKS Auto Mode. | **Full / Native**: `hashicorp/aws` supports EKS Auto Mode (`compute_config`), EKS Access Entries, Pod Identity. `hashicorp/kubernetes` supports `kubernetes_runtime_class_v1`, `kubernetes_deployment_v1`, `kubernetes_namespace_v1`. | Native Terraform modules (`aws` + `kubernetes` providers). No workarounds or `local-exec` required. | Workloads run on dynamically managed Nitro instance types (e.g. `c6a.large`, `c6i.xlarge`). Confidential mode integrates with `/dev/nsm` attestation. |
+| **AWS KMS Envelope & Attestation** | **Hardware Attestation**: Key releases conditioned on Nitro PCR measurements (`kms:RecipientAttestation:ImageSha384`). | **Full / Native**: `aws_kms_key` resource with scoped condition policies and CloudWatch Logs service access. | KMS Customer Managed Key (CMK) configured for secrets encryption and cryptographic attestation validation. | Enforces zero-trust cryptographic guarantees. |
+| **Network & Pod Security** | **Restricted Security Posture**: Pod Security Standards enforced: `restricted`, with default-deny Kubernetes NetworkPolicies. | **Full / Native**: `kubernetes_network_policy_v1` and `kubernetes_namespace_v1`. | Egress scoped to DNS (UDP/TCP 53) and HTTPS (TCP 443). Workload drops all Linux capabilities and runs as non-root UID 101. | Prevents lateral network movement and container privilege escalation. |
 
 ---
 
