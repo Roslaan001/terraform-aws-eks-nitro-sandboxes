@@ -7,9 +7,10 @@ resource "aws_cloudwatch_log_group" "eks" {
 }
 
 resource "aws_eks_cluster" "this" {
-  name     = var.cluster_name
-  version  = var.kubernetes_version
-  role_arn = aws_iam_role.cluster.arn
+  name                          = var.cluster_name
+  version                       = var.kubernetes_version
+  role_arn                      = aws_iam_role.cluster.arn
+  bootstrap_self_managed_addons = var.enable_auto_mode ? false : true
 
   vpc_config {
     subnet_ids              = aws_subnet.private[*].id
@@ -37,9 +38,15 @@ resource "aws_eks_cluster" "this" {
     }
   }
 
+  kubernetes_network_config {
+    elastic_load_balancing {
+      enabled = var.enable_auto_mode
+    }
+  }
+
   storage_config {
     block_storage {
-      enabled = true
+      enabled = var.enable_auto_mode
     }
   }
 
@@ -64,8 +71,9 @@ resource "aws_eks_cluster" "this" {
   tags = var.tags
 }
 
-# EKS Access Entry for Auto Mode Worker Nodes
+# EKS Access Entry for Auto Mode Worker Nodes (managed natively when enable_auto_mode is true)
 resource "aws_eks_access_entry" "node" {
+  count         = var.enable_auto_mode ? 0 : 1
   cluster_name  = aws_eks_cluster.this.name
   principal_arn = aws_iam_role.node.arn
   type          = "EC2_LINUX"
@@ -73,8 +81,9 @@ resource "aws_eks_access_entry" "node" {
   depends_on = [aws_eks_cluster.this]
 }
 
-# EKS Access Entry for Deployer / Administrator
+# EKS Access Entry for Deployer / Administrator (bootstrapped natively when enable_auto_mode is true)
 resource "aws_eks_access_entry" "admin" {
+  count         = var.enable_auto_mode ? 0 : 1
   cluster_name  = aws_eks_cluster.this.name
   principal_arn = data.aws_caller_identity.current.arn
   type          = "STANDARD"
@@ -83,6 +92,7 @@ resource "aws_eks_access_entry" "admin" {
 }
 
 resource "aws_eks_access_policy_association" "admin" {
+  count         = var.enable_auto_mode ? 0 : 1
   cluster_name  = aws_eks_cluster.this.name
   policy_arn    = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKSClusterAdminPolicy"
   principal_arn = data.aws_caller_identity.current.arn

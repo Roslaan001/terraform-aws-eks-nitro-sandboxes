@@ -17,6 +17,29 @@ resource "aws_kms_key" "eks" {
           Resource = "*"
         },
         {
+          Sid    = "AllowCloudWatchLogs"
+          Effect = "Allow"
+          Principal = {
+            Service = [
+              "logs.${var.aws_region}.amazonaws.com",
+              "logs.amazonaws.com"
+            ]
+          }
+          Action = [
+            "kms:Encrypt*",
+            "kms:Decrypt*",
+            "kms:ReEncrypt*",
+            "kms:GenerateDataKey*",
+            "kms:Describe*"
+          ]
+          Resource = "*"
+          Condition = {
+            ArnLike = {
+              "kms:EncryptionContext:aws:logs:arn" = "arn:${data.aws_partition.current.partition}:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:*"
+            }
+          }
+        },
+        {
           Sid    = "AllowEKSEnvelopeEncryption"
           Effect = "Allow"
           Principal = {

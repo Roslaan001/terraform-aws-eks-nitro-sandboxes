@@ -130,6 +130,10 @@ resource "kubernetes_network_policy_v1" "allow_http" {
         port     = "80"
         protocol = "TCP"
       }
+      ports {
+        port     = "8080"
+        protocol = "TCP"
+      }
     }
   }
 }
@@ -167,7 +171,7 @@ resource "kubernetes_deployment_v1" "sample_workload" {
 
       spec {
         service_account_name = kubernetes_service_account_v1.workload.metadata[0].name
-        runtime_class_name   = var.sandbox_mode == "confidential" ? "confidential-sandbox" : "isolated-sandbox"
+        runtime_class_name   = var.enable_workload_runtime_class ? (var.sandbox_mode == "confidential" ? "confidential-sandbox" : "isolated-sandbox") : null
 
         container {
           name  = "web-app"
@@ -175,7 +179,7 @@ resource "kubernetes_deployment_v1" "sample_workload" {
 
           port {
             name           = "http"
-            container_port = 80
+            container_port = 8080
           }
 
           resources {
@@ -191,9 +195,11 @@ resource "kubernetes_deployment_v1" "sample_workload" {
 
           security_context {
             allow_privilege_escalation = false
+            run_as_non_root            = true
+            run_as_user                = 101
+
             capabilities {
               drop = ["ALL"]
-              add  = ["NET_BIND_SERVICE"]
             }
 
             seccomp_profile {
@@ -233,7 +239,7 @@ resource "kubernetes_service_v1" "sample_workload" {
     port {
       name        = "http"
       port        = 80
-      target_port = "80"
+      target_port = "8080"
     }
 
     type = "ClusterIP"

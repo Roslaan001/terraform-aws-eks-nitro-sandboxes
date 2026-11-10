@@ -85,6 +85,12 @@ variable "manage_runtime_classes" {
   default     = true
 }
 
+variable "enable_workload_runtime_class" {
+  description = "Whether to attach runtimeClassName to the sample workload pod spec (requires Nitro Sandbox containerd shim on worker nodes)"
+  type        = bool
+  default     = false
+}
+
 variable "confidential_expected_image_digest" {
   description = "Expected image SHA-384 digest for KMS attestation condition policy (required for confidential sandbox verification)"
   type        = string
@@ -98,9 +104,9 @@ variable "deploy_sample_workload" {
 }
 
 variable "sample_workload_image" {
-  description = "Container image for the sample sandboxed workload (official AWS sample web application)"
+  description = "Container image for the sample sandboxed workload"
   type        = string
-  default     = "public.ecr.aws/ecs-sample-image/amazon-ecs-sample:latest"
+  default     = "public.ecr.aws/nginx/nginx-unprivileged:latest"
 }
 
 variable "sample_workload_replicas" {

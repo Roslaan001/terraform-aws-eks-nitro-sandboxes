@@ -29,5 +29,6 @@ terraform.rc
 
 # Test plan and output artifacts
 *.plan
+tfplan
 *.test.log
 /tmp/
