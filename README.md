@@ -37,7 +37,7 @@ Traditionally, security teams faced an uncompromising choice when deploying mult
 1. **Shared Kubernetes nodes**: Fast and dense, but a single Linux kernel vulnerability (`dirty pipe`, `overlayfs` exploits) allows a container breakout to compromise the host and neighboring workloads.
 2. **Dedicated EC2 instances per tenant**: Strong hardware-level isolation, but cost-prohibitive, wasteful in idle compute reservations, and sluggish during scale-out.
 
-**AWS Nitro Sandboxes** resolve this trade-off by executing each pod or task inside a dedicated, lightweight virtual machine (microVM) directly powered by the AWS Nitro Hypervisor on a single shared EC2 instance.
+Announced in November 2026 ([AWS What's New Announcement](https://aws.amazon.com/about-aws/whats-new/2026/11/nitro-sandboxes-eks-ecs-ec2/)), **AWS Nitro Sandboxes** resolve this trade-off by executing each pod or task inside a dedicated, lightweight virtual machine (microVM) directly powered by the AWS Nitro Hypervisor on a single shared EC2 instance at no extra compute charge.
 
 This repository delivers:
 - **Production-Ready Amazon EKS Auto Mode Module**: Fully automated Terraform module registering native `RuntimeClass` resources (`isolated-sandbox` and `confidential-sandbox`), least-privilege IAM, envelope KMS encryption with CloudWatch integration, and Kubernetes NetworkPolicies.
