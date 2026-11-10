@@ -15,14 +15,8 @@ fmt: ## Check and format all Terraform files
 fmt-check: ## Check formatting without applying changes
 	terraform fmt -check -recursive
 
-validate: init ## Validate root and all modules
+validate: init ## Validate Terraform configuration
 	terraform validate
-	@for m in modules/*; do \
-		if [ -d "$$m" ]; then \
-			echo "Validating $$m..."; \
-			(cd "$$m" && terraform init -backend=false && terraform validate) || exit 1; \
-		fi \
-	done
 
 lint: ## Run TFLint recursively across all configurations
 	tflint --init || true
@@ -35,10 +29,10 @@ test: ## Run native Terraform unit and mock tests
 	terraform test
 
 plan-isolated: init ## Generate Terraform plan for Isolated Sandbox mode
-	terraform plan -var="sandbox_mode=isolated" -var="enable_auto_mode=true"
+	terraform plan -var-file=isolated.tfvars
 
 plan-confidential: init ## Generate Terraform plan for Confidential Sandbox mode
-	terraform plan -var="sandbox_mode=confidential" -var="confidential_expected_image_digest=2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+	terraform plan -var-file=confidential.tfvars
 
 clean: ## Clean up local Terraform state caches and logs
 	find . -type d -name ".terraform" -prune -exec rm -rf {} +

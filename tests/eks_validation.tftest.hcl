@@ -1,4 +1,4 @@
-# Terraform Test: EKS Nitro Sandbox Module Validation
+# Terraform Test: EKS Nitro Sandbox Validation
 
 mock_provider "aws" {
   mock_data "aws_partition" {
@@ -18,7 +18,7 @@ mock_provider "kubernetes" {}
 variables {
   cluster_name           = "test-nitro-eks"
   aws_region             = "us-east-1"
-  sandbox_mode           = "isolated"
+  sandbox_modes          = ["isolated", "confidential"]
   enable_auto_mode       = true
   deploy_sample_workload = true
   vpc_cidr               = "10.0.0.0/16"
@@ -27,10 +27,6 @@ variables {
 
 run "validate_eks_auto_mode_and_sandbox_config" {
   command = plan
-
-  module {
-    source = "./modules/eks"
-  }
 
   assert {
     condition     = aws_eks_cluster.this.compute_config[0].enabled == true
@@ -66,17 +62,18 @@ run "validate_eks_auto_mode_and_sandbox_config" {
 run "validate_confidential_mode_configuration" {
   command = plan
 
-  module {
-    source = "./modules/eks"
-  }
-
   variables {
-    sandbox_mode                       = "confidential"
+    sandbox_modes                      = ["confidential"]
     confidential_expected_image_digest = "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
   }
 
   assert {
-    condition     = var.sandbox_mode == "confidential"
-    error_message = "Sandbox mode must be set to confidential."
+    condition     = contains(var.sandbox_modes, "confidential")
+    error_message = "Sandbox modes must contain 'confidential'."
+  }
+
+  assert {
+    condition     = length(kubernetes_runtime_class_v1.confidential_sandbox) == 1
+    error_message = "Confidential sandbox runtime class must be created."
   }
 }

@@ -1,19 +1,29 @@
-# Example Terraform Variables for AWS Nitro Sandboxes
-aws_region         = "us-east-1"
-environment        = "dev"
-cluster_name       = "nitro-sandbox-eks"
-kubernetes_version = "1.31"
+# AWS Nitro Sandboxes on Amazon EKS Auto Mode Configuration Example
+
+aws_region   = "us-east-1"
+environment  = "dev"
+cluster_name = "nitro-sandbox-eks"
+
+# VPC Configuration
 vpc_cidr           = "10.0.0.0/16"
 availability_zones = ["us-east-1a", "us-east-1b"]
 
-# Nitro Sandbox Configuration
-enable_auto_mode                   = true
-sandbox_mode                       = "isolated" # Or "confidential"
-confidential_expected_image_digest = ""         # Set to SHA-384 hash when sandbox_mode is "confidential"
-deploy_sample_workload             = true
+# EKS Auto Mode & Sandbox Modes
+# sandbox_modes takes a list: ["isolated"], ["confidential"], or both ["isolated", "confidential"]
+enable_auto_mode = true
+sandbox_modes    = ["isolated", "confidential"]
 
+# Confidential Mode Attestation Settings
+# SHA-384 digest of the approved container image
+confidential_expected_image_digest = "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+
+# Sample Workload Deployment
+deploy_sample_workload   = true
+sample_workload_replicas = 2
+sample_workload_image    = "public.ecr.aws/nginx/nginx-unprivileged:latest"
+
+# Resource Tags
 tags = {
-  Project     = "terraform-aws-nitro-sandbox"
-  Environment = "dev"
-  Owner       = "platform-team"
+  Project   = "terraform-aws-nitro-sandbox"
+  ManagedBy = "Terraform"
 }

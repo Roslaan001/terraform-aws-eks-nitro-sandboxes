@@ -67,7 +67,7 @@ resource "aws_kms_key" "eks" {
           Resource = "*"
         }
       ],
-      var.sandbox_mode == "confidential" && var.confidential_expected_image_digest != "" ? [
+      contains(var.sandbox_modes, "confidential") && var.confidential_expected_image_digest != "" ? [
         {
           Sid    = "EnforceNitroAttestationForConfidentialWorkloads"
           Effect = "Allow"

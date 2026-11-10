@@ -13,6 +13,8 @@ crash.*.log
 *.tfvars
 *.tfvars.json
 !terraform.tfvars.example
+!isolated.tfvars
+!confidential.tfvars
 
 # Ignore override files as they are usually used only locally
 override.tf

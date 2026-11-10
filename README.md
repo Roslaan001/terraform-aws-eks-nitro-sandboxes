@@ -196,21 +196,20 @@ terraform {
 
 ```text
 terraform-aws-nitro-sandbox/
-├── modules/
-│   └── eks/                   # Complete EKS Auto Mode & Nitro Sandbox module
-│       ├── vpc.tf             # Multi-AZ VPC, private/public subnets, NAT Gateway, Flow Logs
-│       ├── iam.tf             # Minimal cluster, node, and Pod Identity roles
-│       ├── kms.tf             # Envelope encryption & NSM attestation policy
-│       ├── eks.tf             # EKS cluster with Auto Mode, Access Entries
-│       ├── kubernetes.tf      # RuntimeClasses, namespace, network policies, sample workload
-│       ├── variables.tf       # Validated module variables
-│       ├── outputs.tf         # Module outputs
-│       └── versions.tf        # Provider version constraints
-├── examples/
-│   ├── eks-isolated/          # End-to-end example: Isolated Sandbox on EKS
-│   └── eks-confidential/      # End-to-end example: Confidential Sandbox with KMS Attestation
+├── vpc.tf                     # Multi-AZ VPC, private/public subnets, NAT Gateway, Flow Logs
+├── iam.tf                     # Minimal cluster, node, and Pod Identity roles
+├── kms.tf                     # Envelope encryption & dynamic NSM attestation policy
+├── eks.tf                     # EKS cluster with Auto Mode compute/storage/networking
+├── kubernetes.tf              # Dynamic RuntimeClasses, namespace, network policies, sample workload
+├── variables.tf               # Validated variables supporting list-based sandbox_modes
+├── outputs.tf                 # Cluster endpoints, KMS ARNs, dynamic RuntimeClasses
+├── providers.tf               # AWS and Kubernetes provider declarations
+├── versions.tf                # Strict provider constraints (AWS >= 5.80, K8s >= 2.35)
+├── isolated.tfvars            # Pre-packaged tfvars: sandbox_modes = ["isolated"]
+├── confidential.tfvars        # Pre-packaged tfvars: sandbox_modes = ["confidential"]
+├── terraform.tfvars.example   # Dual-mode example: sandbox_modes = ["isolated", "confidential"]
 ├── tests/
-│   └── eks_validation.tftest.hcl  # Native Terraform unit tests for EKS module
+│   └── eks_validation.tftest.hcl  # Native Terraform unit tests
 ├── scripts/
 │   └── verify_sandbox.sh      # Pod isolation & runtime class verification script
 ├── docs/
@@ -218,16 +217,11 @@ terraform-aws-nitro-sandbox/
 │   ├── compatibility_matrix.md     # Detailed service & provider matrix
 │   ├── security_and_threat_model.md # Threat model & defense-in-depth guide
 │   ├── cost_and_performance.md     # Cost model & benchmark methodology
-│   └── article_outline.md          # Full publication-ready technical article
+│   ├── article_outline.md          # Technical article outline
+│   └── aws_nitro_sandboxes_article.md # Full publication-ready technical article
 ├── .github/
 │   └── workflows/
 │       └── ci.yml             # GitHub Actions CI (fmt, validate, lint, scan, test)
-├── main.tf                    # Root orchestration configuration
-├── variables.tf               # Root input variables
-├── outputs.tf                 # Root outputs
-├── versions.tf                # Root provider constraints
-├── providers.tf               # AWS and Kubernetes provider blocks
-├── terraform.tfvars.example   # Sample variable values
 ├── Makefile                   # Developer automation targets
 ├── .gitignore                 # Standard Terraform git ignore rules
 └── README.md                  # This document
@@ -243,35 +237,47 @@ terraform-aws-nitro-sandbox/
 git clone https://github.com/aws-samples/terraform-aws-nitro-sandbox.git
 cd terraform-aws-nitro-sandbox
 
-# Create your variables file
-cp terraform.tfvars.example terraform.tfvars
+# Option A: Deploy using the pre-configured isolated sandbox vars
+cp isolated.tfvars terraform.tfvars
+
+# Option B: Deploy using the pre-configured confidential sandbox vars
+# cp confidential.tfvars terraform.tfvars
+
+# Option C: Deploy dual-mode (isolated + confidential side-by-side)
+# cp terraform.tfvars.example terraform.tfvars
 ```
 
-Edit `terraform.tfvars` to select your preferred `sandbox_mode`:
-- Set `sandbox_mode = "isolated"` for standard hardware-isolated microVMs.
-- Set `sandbox_mode = "confidential"` for confidential computing with cryptographic attestation.
+Configure `sandbox_modes` as a list in `terraform.tfvars`:
+- `sandbox_modes = ["isolated"]` for standard hardware-isolated microVMs.
+- `sandbox_modes = ["confidential"]` for confidential computing with cryptographic attestation.
+- `sandbox_modes = ["isolated", "confidential"]` for both modes side-by-side in the same cluster.
 
 ### Step 2: Initialize and Validate Locally
 
 ```bash
-# Initialize Terraform without remote state
+# Initialize Terraform
 make init
 
-# Validate syntax and schemas
+# Validate syntax and formatting
 make validate
 
-# Run TFLint and Trivy security scans
+# Run TFLint and security scans
 make lint
 make scan
 
-# Run automated mock unit tests
+# Run automated unit tests
 make test
 ```
 
 ### Step 3: Review Execution Plan
 
 ```bash
+# Plan with default variables
 terraform plan -out=tfplan
+
+# Or plan with a specific preset:
+# make plan-isolated
+# make plan-confidential
 ```
 
 ### Step 4: Apply (Deploy Infrastructure)
@@ -429,7 +435,7 @@ See [`docs/cost_and_performance.md`](docs/cost_and_performance.md) for detailed 
 
 ### Issue 2: `RuntimeClass` not found
 - **Cause**: Variable `manage_runtime_classes` was set to `false` and Auto Mode did not automatically inject the runtime class.
-- **Resolution**: Ensure `manage_runtime_classes = true` in `modules/eks` so Terraform creates the `kubernetes_runtime_class_v1` definitions.
+- **Resolution**: Ensure `manage_runtime_classes = true` in your `terraform.tfvars` so Terraform creates the `kubernetes_runtime_class_v1` definitions.
 
 ### Issue 3: KMS Decrypt Access Denied in Confidential Mode
 - **Cause**: The container image digest did not match `confidential_expected_image_digest` in the KMS key policy condition.

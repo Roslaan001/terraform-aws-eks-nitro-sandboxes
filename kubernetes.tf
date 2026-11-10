@@ -1,6 +1,6 @@
 # 1. Kubernetes RuntimeClasses for Nitro Sandboxes
 resource "kubernetes_runtime_class_v1" "isolated_sandbox" {
-  count = var.manage_runtime_classes ? 1 : 0
+  count = var.manage_runtime_classes && contains(var.sandbox_modes, "isolated") ? 1 : 0
 
   metadata {
     name = "isolated-sandbox"
@@ -16,7 +16,7 @@ resource "kubernetes_runtime_class_v1" "isolated_sandbox" {
 }
 
 resource "kubernetes_runtime_class_v1" "confidential_sandbox" {
-  count = var.manage_runtime_classes ? 1 : 0
+  count = var.manage_runtime_classes && contains(var.sandbox_modes, "confidential") ? 1 : 0
 
   metadata {
     name = "confidential-sandbox"
@@ -140,15 +140,15 @@ resource "kubernetes_network_policy_v1" "allow_http" {
 
 # 7. Sample Verified Sandboxed Workload (AWS Web Application)
 resource "kubernetes_deployment_v1" "sample_workload" {
-  count = var.deploy_sample_workload ? 1 : 0
+  for_each = toset(var.deploy_sample_workload ? var.sandbox_modes : [])
 
   metadata {
-    name      = "nitro-sandbox-sample"
+    name      = "nitro-sandbox-${each.key}"
     namespace = kubernetes_namespace_v1.sandbox.metadata[0].name
 
     labels = {
       app                           = "nitro-sandbox-sample"
-      "sandbox.aws.amazon.com/mode" = var.sandbox_mode
+      "sandbox.aws.amazon.com/mode" = each.key
     }
   }
 
@@ -157,7 +157,8 @@ resource "kubernetes_deployment_v1" "sample_workload" {
 
     selector {
       match_labels = {
-        app = "nitro-sandbox-sample"
+        app                           = "nitro-sandbox-sample"
+        "sandbox.aws.amazon.com/mode" = each.key
       }
     }
 
@@ -165,13 +166,13 @@ resource "kubernetes_deployment_v1" "sample_workload" {
       metadata {
         labels = {
           app                           = "nitro-sandbox-sample"
-          "sandbox.aws.amazon.com/mode" = var.sandbox_mode
+          "sandbox.aws.amazon.com/mode" = each.key
         }
       }
 
       spec {
         service_account_name = kubernetes_service_account_v1.workload.metadata[0].name
-        runtime_class_name   = var.enable_workload_runtime_class ? (var.sandbox_mode == "confidential" ? "confidential-sandbox" : "isolated-sandbox") : null
+        runtime_class_name   = var.enable_workload_runtime_class ? "${each.key}-sandbox" : null
 
         container {
           name  = "web-app"
