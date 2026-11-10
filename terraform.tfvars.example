@@ -1,0 +1,23 @@
+# Example Terraform Variables for AWS Nitro Sandboxes
+aws_region         = "us-east-1"
+environment        = "dev"
+cluster_name       = "nitro-sandbox-eks"
+kubernetes_version = "1.31"
+vpc_cidr           = "10.0.0.0/16"
+availability_zones = ["us-east-1a", "us-east-1b"]
+
+# Nitro Sandbox Configuration
+enable_auto_mode                   = true
+sandbox_mode                       = "isolated" # Or "confidential"
+confidential_expected_image_digest = ""         # Set to SHA-384 hash when sandbox_mode is "confidential"
+deploy_sample_workload             = true
+
+# Optional Secondary Services
+enable_ecs = false
+enable_ec2 = false
+
+tags = {
+  Project     = "terraform-aws-nitro-sandbox"
+  Environment = "dev"
+  Owner       = "platform-team"
+}

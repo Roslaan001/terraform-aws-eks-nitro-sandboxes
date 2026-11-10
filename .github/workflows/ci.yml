@@ -1,0 +1,74 @@
+name: "Terraform Validation & Security Linting"
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+  security-events: write
+
+jobs:
+  validate:
+    name: "Validate, Lint & Test"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.16.2"
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Init (Root)
+        run: terraform init -backend=false
+
+      - name: Terraform Validate (Root)
+        run: terraform validate
+
+      - name: Terraform Init & Validate (EKS Module)
+        run: |
+          cd modules/eks
+          terraform init -backend=false
+          terraform validate
+
+      - name: Terraform Init & Validate (ECS Module)
+        run: |
+          cd modules/ecs
+          terraform init -backend=false
+          terraform validate
+
+      - name: Terraform Init & Validate (EC2 Module)
+        run: |
+          cd modules/ec2
+          terraform init -backend=false
+          terraform validate
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: "v0.54.0"
+
+      - name: Run TFLint
+        run: |
+          tflint --init
+          tflint --recursive
+
+      - name: Run Trivy Security Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "config"
+          scan-ref: "."
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"
+
+      - name: Run Terraform Tests
+        run: terraform test
