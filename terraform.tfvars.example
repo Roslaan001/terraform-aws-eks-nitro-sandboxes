@@ -12,10 +12,6 @@ sandbox_mode                       = "isolated" # Or "confidential"
 confidential_expected_image_digest = ""         # Set to SHA-384 hash when sandbox_mode is "confidential"
 deploy_sample_workload             = true
 
-# Optional Secondary Services
-enable_ecs = false
-enable_ec2 = false
-
 tags = {
   Project     = "terraform-aws-nitro-sandbox"
   Environment = "dev"

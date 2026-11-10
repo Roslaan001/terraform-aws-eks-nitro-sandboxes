@@ -68,18 +68,6 @@ variable "deploy_sample_workload" {
   default     = true
 }
 
-variable "enable_ecs" {
-  description = "Whether to provision the Amazon ECS Nitro Sandbox module"
-  type        = bool
-  default     = false
-}
-
-variable "enable_ec2" {
-  description = "Whether to provision the Amazon EC2 Nitro Sandbox host module"
-  type        = bool
-  default     = false
-}
-
 variable "tags" {
   description = "Common resource tags"
   type        = map(string)

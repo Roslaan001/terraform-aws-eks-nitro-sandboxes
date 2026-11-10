@@ -18,38 +18,3 @@ module "eks" {
     }
   )
 }
-
-module "ecs" {
-  count  = var.enable_ecs ? 1 : 0
-  source = "./modules/ecs"
-
-  cluster_name       = "${var.cluster_name}-ecs"
-  environment        = var.environment
-  vpc_id             = module.eks.vpc_id
-  private_subnet_ids = module.eks.private_subnet_ids
-  isolation_mode     = var.sandbox_mode == "confidential" ? "CONFIDENTIAL_SANDBOX" : "ISOLATED_SANDBOX"
-
-  tags = merge(
-    var.tags,
-    {
-      Environment = var.environment
-    }
-  )
-}
-
-module "ec2" {
-  count  = var.enable_ec2 ? 1 : 0
-  source = "./modules/ec2"
-
-  instance_name = "${var.cluster_name}-host"
-  environment   = var.environment
-  vpc_id        = module.eks.vpc_id
-  subnet_id     = module.eks.private_subnet_ids[0]
-
-  tags = merge(
-    var.tags,
-    {
-      Environment = var.environment
-    }
-  )
-}

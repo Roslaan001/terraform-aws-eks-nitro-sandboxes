@@ -42,13 +42,3 @@ output "verify_sandbox_command" {
   description = "Command to verify the deployed sandboxed workload"
   value       = "kubectl get pods -n ${module.eks.sandbox_namespace} -o wide"
 }
-
-output "ecs_cluster_name" {
-  description = "Amazon ECS Cluster Name (if enabled)"
-  value       = var.enable_ecs ? module.ecs[0].cluster_name : null
-}
-
-output "ec2_instance_id" {
-  description = "Amazon EC2 Nitro Sandbox host ID (if enabled)"
-  value       = var.enable_ec2 ? module.ec2[0].instance_id : null
-}
