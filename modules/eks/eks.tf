@@ -15,13 +15,9 @@ resource "aws_eks_cluster" "this" {
   vpc_config {
     subnet_ids              = aws_subnet.private[*].id
     endpoint_private_access = true
-    #trivy:ignore:AVD-AWS-0040:Public cluster access is configurable for external kubectl access
-    #trivy:ignore:aws-eks-no-public-cluster-access:Configurable for external kubectl access
-    endpoint_public_access = var.cluster_endpoint_public_access
-    #trivy:ignore:AVD-AWS-0041:Public CIDRs configurable via variable for external kubectl access
-    #trivy:ignore:aws-eks-no-public-cluster-access-to-cidr:Configurable for external kubectl access
-    public_access_cidrs = var.cluster_endpoint_public_access_cidrs
-    security_group_ids  = [aws_security_group.cluster.id]
+    endpoint_public_access  = var.cluster_endpoint_public_access
+    public_access_cidrs     = var.cluster_endpoint_public_access_cidrs
+    security_group_ids      = [aws_security_group.cluster.id]
   }
 
   access_config {

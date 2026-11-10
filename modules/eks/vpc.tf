@@ -147,7 +147,6 @@ resource "aws_vpc_security_group_ingress_rule" "cluster_self" {
   ip_protocol                  = "-1"
 }
 
-#trivy:ignore:AVD-AWS-0104:Required for outbound HTTPS to ECR and AWS APIs
 resource "aws_vpc_security_group_egress_rule" "cluster_egress_https" {
   security_group_id = aws_security_group.cluster.id
   description       = "Allow outbound HTTPS traffic for AWS API and container registry access"
