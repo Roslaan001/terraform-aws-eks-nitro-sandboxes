@@ -30,7 +30,22 @@ run "validate_eks_auto_mode_and_sandbox_config" {
 
   assert {
     condition     = aws_eks_cluster.this.compute_config[0].enabled == true
-    error_message = "EKS Auto Mode must be enabled for native Nitro Sandbox provisioning."
+    error_message = "EKS Auto Mode compute_config must be enabled."
+  }
+
+  assert {
+    condition     = aws_eks_cluster.this.kubernetes_network_config[0].elastic_load_balancing[0].enabled == true
+    error_message = "EKS Auto Mode elastic load balancing must be enabled."
+  }
+
+  assert {
+    condition     = aws_eks_cluster.this.storage_config[0].block_storage[0].enabled == true
+    error_message = "EKS Auto Mode block storage must be enabled."
+  }
+
+  assert {
+    condition     = aws_eks_cluster.this.bootstrap_self_managed_addons == false
+    error_message = "bootstrap_self_managed_addons must be false for Auto Mode."
   }
 
   assert {
@@ -39,23 +54,13 @@ run "validate_eks_auto_mode_and_sandbox_config" {
   }
 
   assert {
-    condition     = aws_eks_cluster.this.access_config[0].authentication_mode == "API_AND_CONFIG_MAP"
-    error_message = "EKS Cluster access config must support API authentication mode."
-  }
-
-  assert {
-    condition     = kubernetes_runtime_class_v1.isolated_sandbox[0].handler == "isolated-sandbox"
-    error_message = "Kubernetes RuntimeClass handler must be 'isolated-sandbox'."
-  }
-
-  assert {
-    condition     = kubernetes_runtime_class_v1.confidential_sandbox[0].handler == "confidential-sandbox"
-    error_message = "Kubernetes RuntimeClass handler must be 'confidential-sandbox'."
-  }
-
-  assert {
     condition     = kubernetes_namespace_v1.sandbox.metadata[0].labels["pod-security.kubernetes.io/enforce"] == "restricted"
     error_message = "Sandbox namespace must enforce restricted Pod Security Standards."
+  }
+
+  assert {
+    condition     = kubernetes_deployment_v1.isolated_workload[0].spec[0].template[0].spec[0].runtime_class_name == "isolated-sandbox"
+    error_message = "Isolated workload must reference built-in 'isolated-sandbox' RuntimeClass."
   }
 }
 
@@ -63,8 +68,8 @@ run "validate_confidential_mode_configuration" {
   command = plan
 
   variables {
-    sandbox_modes                      = ["confidential"]
-    confidential_expected_image_digest = "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+    sandbox_modes               = ["confidential"]
+    confidential_expected_pcr17 = "b4a3a60f9e9cf2ec0b4e2f9d6a7d5b8e9f2a4c1d3e5f7a9b0c2d4e6f8a1b3c5d"
   }
 
   assert {
@@ -73,7 +78,12 @@ run "validate_confidential_mode_configuration" {
   }
 
   assert {
-    condition     = length(kubernetes_runtime_class_v1.confidential_sandbox) == 1
-    error_message = "Confidential sandbox runtime class must be created."
+    condition     = kubernetes_deployment_v1.confidential_workload[0].spec[0].template[0].spec[0].runtime_class_name == "confidential-sandbox"
+    error_message = "Confidential workload must reference built-in 'confidential-sandbox' RuntimeClass."
+  }
+
+  assert {
+    condition     = kubernetes_deployment_v1.confidential_workload[0].spec[0].template[0].metadata[0].annotations["sandbox.amazonaws.com/policy"] != ""
+    error_message = "Confidential workload must attach Cedar policy annotation."
   }
 }

@@ -1,37 +1,4 @@
-# 1. Kubernetes RuntimeClasses for Nitro Sandboxes
-resource "kubernetes_runtime_class_v1" "isolated_sandbox" {
-  count = var.manage_runtime_classes && contains(var.sandbox_modes, "isolated") ? 1 : 0
-
-  metadata {
-    name = "isolated-sandbox"
-    labels = {
-      "app.kubernetes.io/managed-by" = "terraform"
-      "sandbox.aws.amazon.com/type"  = "isolated"
-    }
-  }
-
-  handler = "isolated-sandbox"
-
-  depends_on = [aws_eks_cluster.this]
-}
-
-resource "kubernetes_runtime_class_v1" "confidential_sandbox" {
-  count = var.manage_runtime_classes && contains(var.sandbox_modes, "confidential") ? 1 : 0
-
-  metadata {
-    name = "confidential-sandbox"
-    labels = {
-      "app.kubernetes.io/managed-by" = "terraform"
-      "sandbox.aws.amazon.com/type"  = "confidential"
-    }
-  }
-
-  handler = "confidential-sandbox"
-
-  depends_on = [aws_eks_cluster.this]
-}
-
-# 2. Namespace with Pod Security Standards (Restricted)
+# 1. Namespace with Pod Security Standards (Restricted)
 resource "kubernetes_namespace_v1" "sandbox" {
   metadata {
     name = var.sandbox_namespace
@@ -47,7 +14,7 @@ resource "kubernetes_namespace_v1" "sandbox" {
   depends_on = [aws_eks_cluster.this]
 }
 
-# 3. Workload Service Account
+# 2. Workload Service Account for EKS Pod Identity
 resource "kubernetes_service_account_v1" "workload" {
   metadata {
     name      = "sandbox-workload-sa"
@@ -59,7 +26,7 @@ resource "kubernetes_service_account_v1" "workload" {
   }
 }
 
-# 4. Network Policy: Default Deny All Ingress and Egress
+# 3. Network Policy: Default Deny All Ingress and Egress
 resource "kubernetes_network_policy_v1" "default_deny" {
   metadata {
     name      = "default-deny-sandbox"
@@ -72,7 +39,7 @@ resource "kubernetes_network_policy_v1" "default_deny" {
   }
 }
 
-# 5. Network Policy: Allow Egress to DNS and AWS APIs / ECR / KMS (HTTPS)
+# 4. Network Policy: Allow Egress to DNS and AWS APIs / ECR / KMS (HTTPS)
 resource "kubernetes_network_policy_v1" "allow_egress" {
   metadata {
     name      = "allow-sandbox-egress"
@@ -110,7 +77,7 @@ resource "kubernetes_network_policy_v1" "allow_egress" {
   }
 }
 
-# 6. Network Policy: Allow HTTP Ingress within Cluster
+# 5. Network Policy: Allow HTTP Ingress within Cluster
 resource "kubernetes_network_policy_v1" "allow_http" {
   metadata {
     name      = "allow-sandbox-http"
@@ -138,17 +105,18 @@ resource "kubernetes_network_policy_v1" "allow_http" {
   }
 }
 
-# 7. Sample Verified Sandboxed Workload (AWS Web Application)
-resource "kubernetes_deployment_v1" "sample_workload" {
-  for_each = toset(var.deploy_sample_workload ? var.sandbox_modes : [])
+# 6. Sample Isolated Sandboxed Workload
+# Uses EKS Auto Mode's built-in 'isolated-sandbox' RuntimeClass
+resource "kubernetes_deployment_v1" "isolated_workload" {
+  count = var.deploy_sample_workload && contains(var.sandbox_modes, "isolated") ? 1 : 0
 
   metadata {
-    name      = "nitro-sandbox-${each.key}"
+    name      = "nitro-sandbox-isolated"
     namespace = kubernetes_namespace_v1.sandbox.metadata[0].name
 
     labels = {
       app                           = "nitro-sandbox-sample"
-      "sandbox.aws.amazon.com/mode" = each.key
+      "sandbox.aws.amazon.com/mode" = "isolated"
     }
   }
 
@@ -158,7 +126,7 @@ resource "kubernetes_deployment_v1" "sample_workload" {
     selector {
       match_labels = {
         app                           = "nitro-sandbox-sample"
-        "sandbox.aws.amazon.com/mode" = each.key
+        "sandbox.aws.amazon.com/mode" = "isolated"
       }
     }
 
@@ -166,17 +134,18 @@ resource "kubernetes_deployment_v1" "sample_workload" {
       metadata {
         labels = {
           app                           = "nitro-sandbox-sample"
-          "sandbox.aws.amazon.com/mode" = each.key
+          "sandbox.aws.amazon.com/mode" = "isolated"
         }
       }
 
       spec {
+        # Directly reference the built-in EKS Auto Mode isolated RuntimeClass
+        runtime_class_name   = "isolated-sandbox"
         service_account_name = kubernetes_service_account_v1.workload.metadata[0].name
-        runtime_class_name   = var.enable_workload_runtime_class ? "${each.key}-sandbox" : null
 
         container {
           name  = "web-app"
-          image = var.sample_workload_image
+          image = var.isolated_workload_image
 
           port {
             name           = "http"
@@ -213,8 +182,94 @@ resource "kubernetes_deployment_v1" "sample_workload" {
   }
 
   depends_on = [
-    kubernetes_runtime_class_v1.isolated_sandbox,
-    kubernetes_runtime_class_v1.confidential_sandbox,
+    kubernetes_network_policy_v1.allow_egress,
+    kubernetes_network_policy_v1.allow_http
+  ]
+}
+
+# 7. Sample Confidential Sandboxed Workload
+# Uses EKS Auto Mode's built-in 'confidential-sandbox' RuntimeClass
+# and enforces Cedar policy via 'sandbox.amazonaws.com/policy' annotation
+resource "kubernetes_deployment_v1" "confidential_workload" {
+  count = var.deploy_sample_workload && contains(var.sandbox_modes, "confidential") ? 1 : 0
+
+  metadata {
+    name      = "nitro-sandbox-confidential"
+    namespace = kubernetes_namespace_v1.sandbox.metadata[0].name
+
+    labels = {
+      app                           = "nitro-sandbox-sample"
+      "sandbox.aws.amazon.com/mode" = "confidential"
+    }
+  }
+
+  spec {
+    replicas = var.sample_workload_replicas
+
+    selector {
+      match_labels = {
+        app                           = "nitro-sandbox-sample"
+        "sandbox.aws.amazon.com/mode" = "confidential"
+      }
+    }
+
+    template {
+      metadata {
+        labels = {
+          app                           = "nitro-sandbox-sample"
+          "sandbox.aws.amazon.com/mode" = "confidential"
+        }
+        annotations = {
+          # Generated Cedar policy attached to confidential pod template
+          "sandbox.amazonaws.com/policy" = var.confidential_cedar_policy_base64
+        }
+      }
+
+      spec {
+        # Directly reference the built-in EKS Auto Mode confidential RuntimeClass
+        runtime_class_name   = "confidential-sandbox"
+        service_account_name = kubernetes_service_account_v1.workload.metadata[0].name
+
+        container {
+          name = "web-app"
+          # Immutable digest-pinned image for confidential attestation integrity
+          image = var.confidential_workload_image
+
+          port {
+            name           = "http"
+            container_port = 8080
+          }
+
+          resources {
+            limits = {
+              cpu    = "500m"
+              memory = "512Mi"
+            }
+            requests = {
+              cpu    = "100m"
+              memory = "128Mi"
+            }
+          }
+
+          security_context {
+            allow_privilege_escalation = false
+            run_as_non_root            = true
+            run_as_user                = 101
+
+            capabilities {
+              drop = ["ALL"]
+            }
+
+            seccomp_profile {
+              type = "RuntimeDefault"
+            }
+          }
+        }
+      }
+    }
+  }
+
+  depends_on = [
     kubernetes_network_policy_v1.allow_egress,
     kubernetes_network_policy_v1.allow_http
   ]

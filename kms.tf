@@ -53,21 +53,10 @@ resource "aws_kms_key" "eks" {
             "kms:DescribeKey"
           ]
           Resource = "*"
-        },
-        {
-          Sid    = "AllowWorkloadStandardDecrypt"
-          Effect = "Allow"
-          Principal = {
-            AWS = aws_iam_role.workload.arn
-          }
-          Action = [
-            "kms:Decrypt",
-            "kms:DescribeKey"
-          ]
-          Resource = "*"
         }
       ],
-      contains(var.sandbox_modes, "confidential") && var.confidential_expected_image_digest != "" ? [
+      # Confidential Sandbox Attestation statement: Strictly gated on PCR17 (Cedar policy hash) and PCR8 (EKS service)
+      contains(var.sandbox_modes, "confidential") ? [
         {
           Sid    = "EnforceNitroAttestationForConfidentialWorkloads"
           Effect = "Allow"
@@ -80,10 +69,26 @@ resource "aws_kms_key" "eks" {
           ]
           Resource = "*"
           Condition = {
-            StringEqualsIgnoreCase = {
-              "kms:RecipientAttestation:ImageSha384" = var.confidential_expected_image_digest
+            StringEquals = {
+              "kms:RecipientAttestation:PCR17"            = var.confidential_expected_pcr17
+              "kms:RecipientAttestation:PCR8:ServiceName" = "eks.amazonaws.com"
             }
           }
+        }
+      ] : [],
+      # When confidential mode is NOT enabled (pure isolated mode), allow standard workload decrypt
+      !contains(var.sandbox_modes, "confidential") && contains(var.sandbox_modes, "isolated") ? [
+        {
+          Sid    = "AllowWorkloadStandardDecrypt"
+          Effect = "Allow"
+          Principal = {
+            AWS = aws_iam_role.workload.arn
+          }
+          Action = [
+            "kms:Decrypt",
+            "kms:DescribeKey"
+          ]
+          Resource = "*"
         }
       ] : []
     )
@@ -98,6 +103,6 @@ resource "aws_kms_key" "eks" {
 }
 
 resource "aws_kms_alias" "eks" {
-  name          = "alias/${var.cluster_name}-kms"
+  name          = "alias/${var.cluster_name}-key"
   target_key_id = aws_kms_key.eks.key_id
 }

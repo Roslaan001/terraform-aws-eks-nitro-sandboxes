@@ -1,8 +1,8 @@
 # Production-Ready AWS Nitro Sandboxes on Amazon EKS Auto Mode
 
-[![Terraform Validation](https://github.com/aws-samples/terraform-aws-nitro-sandbox/actions/workflows/ci.yml/badge.svg)](https://github.com/aws-samples/terraform-aws-nitro-sandbox/actions)
+[![Terraform Validation](https://github.com/Roslaan001/terraform-aws-eks-nitro-sandboxes/actions/workflows/ci.yml/badge.svg)](https://github.com/Roslaan001/terraform-aws-eks-nitro-sandboxes/actions)
 [![Terraform >= 1.6](https://img.shields.io/badge/Terraform->=1.6.0-623CE4.svg?logo=terraform)](https://www.terraform.io/)
-[![AWS Provider >= 5.80](https://img.shields.io/badge/AWS%20Provider->=5.80.0-FF9900.svg?logo=amazon-aws)](https://registry.terraform.io/providers/hashicorp/aws/latest)
+[![AWS Provider >= 6.0](https://img.shields.io/badge/AWS%20Provider->=6.0.0-FF9900.svg?logo=amazon-aws)](https://registry.terraform.io/providers/hashicorp/aws/latest)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 An enterprise-grade, verified Infrastructure-as-Code implementation provisioning **AWS Nitro Sandboxes** on **Amazon Elastic Kubernetes Service (Amazon EKS) with EKS Auto Mode** using HashiCorp Terraform.
@@ -14,20 +14,19 @@ An enterprise-grade, verified Infrastructure-as-Code implementation provisioning
 - [1. Project Overview](#1-project-overview)
 - [2. What AWS Nitro Sandboxes Are](#2-what-aws-nitro-sandboxes-are)
 - [3. Architecture Diagram](#3-architecture-diagram)
-- [4. Supported Services & Compatibility Matrix](#4-supported-services--compatibility-matrix)
-- [5. Prerequisites](#5-prerequisites)
-- [6. AWS Region & Instance Requirements](#6-aws-region--instance-requirements)
-- [7. Terraform Provider Requirements](#7-terraform-provider-requirements)
+- [4. Isolation Modes: Isolated vs Confidential](#4-isolation-modes-isolated-vs-confidential)
+- [5. Cedar Policy & Attestation Workflow](#5-cedar-policy--attestation-workflow)
+- [6. Prerequisites](#6-prerequisites)
+- [7. AWS Region & Instance Requirements](#7-aws-region--instance-requirements)
 - [8. Repository Structure](#8-repository-structure)
 - [9. Deployment Instructions](#9-deployment-instructions)
 - [10. Workload Deployment Guide](#10-workload-deployment-guide)
 - [11. Verification Procedures](#11-verification-procedures)
 - [12. Security Considerations & Threat Model](#12-security-considerations--threat-model)
-- [13. Cost Considerations & Performance](#13-cost-considerations--performance)
+- [13. Cost Considerations & Infrastructure Analysis](#13-cost-considerations--infrastructure-analysis)
 - [14. Troubleshooting](#14-troubleshooting)
 - [15. Cleanup Instructions](#15-cleanup-instructions)
-- [16. Known Limitations & Upstream Provider Contributions](#16-known-limitations--upstream-provider-contributions)
-- [17. Future Improvements](#17-future-improvements)
+- [16. License](#16-license)
 
 ---
 
@@ -37,11 +36,12 @@ Traditionally, security teams faced an uncompromising choice when deploying mult
 1. **Shared Kubernetes nodes**: Fast and dense, but a single Linux kernel vulnerability (`dirty pipe`, `overlayfs` exploits) allows a container breakout to compromise the host and neighboring workloads.
 2. **Dedicated EC2 instances per tenant**: Strong hardware-level isolation, but cost-prohibitive, wasteful in idle compute reservations, and sluggish during scale-out.
 
-Announced in November 2026 ([AWS What's New Announcement](https://aws.amazon.com/about-aws/whats-new/2026/11/nitro-sandboxes-eks-ecs-ec2/)), **AWS Nitro Sandboxes** resolve this trade-off by executing each pod or task inside a dedicated, lightweight virtual machine (microVM) directly powered by the AWS Nitro Hypervisor on a single shared EC2 instance at no extra compute charge.
+Announced in November 2026 ([AWS What's New Announcement](https://aws.amazon.com/about-aws/whats-new/2026/11/nitro-sandboxes-eks-ecs-ec2/)), **AWS Nitro Sandboxes** resolve this trade-off by executing each pod inside a dedicated, lightweight virtual machine (microVM) directly powered by the AWS Nitro Hypervisor on a single shared EC2 instance at no extra compute charge beyond the underlying instance capacity.
 
 This repository delivers:
-- **Production-Ready Amazon EKS Auto Mode Module**: Fully automated Terraform module registering native `RuntimeClass` resources (`isolated-sandbox` and `confidential-sandbox`), least-privilege IAM, envelope KMS encryption with CloudWatch integration, and Kubernetes NetworkPolicies.
-- **Automated Validation Suite**: Native Terraform tests (`terraform test`), TFLint rules, Trivy IaC security scans, and operational verification scripts (`scripts/verify_sandbox.sh`).
+- **Amazon EKS Auto Mode Infrastructure**: Clean Terraform implementation leveraging built-in `RuntimeClass` resources (`isolated-sandbox` and `confidential-sandbox`), least-privilege IAM, envelope KMS encryption with CloudWatch integration, and Kubernetes NetworkPolicies.
+- **Hardware-Enforced Workload Isolation**: Ready-to-deploy isolated and confidential workloads featuring Cedar policy integration and KMS PCR17/PCR8 attestation gating.
+- **Automated Validation Suite**: Native Terraform tests (`terraform test`), static validation, and operational verification scripts (`scripts/verify_sandbox.sh`).
 
 ---
 
@@ -77,11 +77,11 @@ AWS Nitro Sandboxes:
 ```
 
 - **Dedicated Guest Kernel**: Every pod boots its own stripped-down Linux microVM kernel. System calls cannot reach the host kernel.
-- **MicroVM Shim**: Managed via `containerd-shim-nitro-sandbox-v2` on the host, communicating with an in-guest `nitro-sandbox-agent` via `virtio` devices.
+- **MicroVM Shim**: Managed via `containerd-shim-nitro-sandbox-v2` on the host, communicating with an in-guest agent via `virtio` devices.
 - **Native Ecosystem**: Standard Kubernetes primitives (Amazon VPC CNI, EBS CSI driver, EKS Pod Identity, CloudWatch Container Insights) function seamlessly.
-- **Two Isolation Tiers**:
-  - `isolated-sandbox`: Hardware-isolated microVM boundary preventing container breakout and lateral movement.
-  - `confidential-sandbox`: Extends isolation with confidential computing via the Nitro Security Module (NSM), enforcing hardware cryptographic attestation before releasing AWS KMS decryption keys.
+- **Built-in Auto Mode RuntimeClasses**:
+  - `isolated-sandbox`: Hardware-isolated microVM boundary protecting the host and neighboring pods from container breakouts.
+  - `confidential-sandbox`: Extends isolation with confidential computing, Cedar policy enforcement, encrypted overlay storage, and cryptographic attestation against AWS KMS before secrets release.
 
 ---
 
@@ -96,25 +96,25 @@ flowchart TD
         end
 
         subgraph PrivateSubnets ["Private Subnets"]
-            subgraph EKSControlPlane ["Amazon EKS Control Plane (Auto Mode)"]
-                API["Kubernetes API Server (1.31)"]
+            subgraph EKSControlPlane ["Amazon EKS Control Plane (Auto Mode - K8s 1.36+)"]
+                API["Kubernetes API Server"]
                 AuditLogs["CloudWatch Log Group (/aws/eks/...)"]
             end
 
-            subgraph NitroNode ["Nitro EC2 Host (e.g. c6i.xlarge)"]
+            subgraph NitroNode ["Nitro EC2 Host (e.g. c6i.xlarge / c6a.xlarge)"]
                 Kubelet["Kubelet (Auto Mode Managed)"]
                 Containerd["Containerd Runtime"]
                 Shim["containerd-shim-nitro-sandbox-v2"]
 
                 subgraph MicroVM1 ["Nitro Sandbox MicroVM #1"]
                     K1["Guest Kernel"]
-                    Pod1["Workload: Tenant A Pod\n(runtimeClassName: isolated-sandbox)"]
+                    Pod1["Workload: Isolated Pod\n(runtimeClassName: isolated-sandbox)"]
                 end
 
                 subgraph MicroVM2 ["Nitro Sandbox MicroVM #2 (Confidential)"]
                     K2["Guest Kernel"]
-                    NSM["/dev/nsm Attestation"]
-                    Pod2["Workload: Confidential AI Pod\n(runtimeClassName: confidential-sandbox)"]
+                    Cedar["Cedar Policy Engine"]
+                    Pod2["Workload: Confidential Pod\n(runtimeClassName: confidential-sandbox)\n(sandbox.amazonaws.com/policy)"]
                 end
             end
         end
@@ -122,7 +122,7 @@ flowchart TD
 
     subgraph SecurityControls ["AWS Security & Cryptographic Controls"]
         IAM_Pod["EKS Pod Identity (Workload IAM Role)"]
-        KMS["AWS KMS Customer Managed Key\n(kms:RecipientAttestation:ImageSha384)"]
+        KMS["AWS KMS Customer Managed Key\n(PCR17 Cedar Policy Hash + PCR8 ServiceName)"]
     end
 
     Pod1 -->|Pod Identity| IAM_Pod
@@ -139,151 +139,137 @@ flowchart TD
 
 ---
 
-## 4. Supported Architecture & Capabilities
+## 4. Isolation Modes: Isolated vs Confidential
 
-| Service Component | AWS Capability | Terraform Support | Implementation Approach | Verified Notes |
-|---|---|---|---|---|
-| **Amazon EKS (Auto Mode)** | **Native / GA**: Hardware-isolated microVMs per pod via `RuntimeClass` (`isolated-sandbox`, `confidential-sandbox`). Dynamic node provisioning on EKS Auto Mode. | **Full / Native**: `hashicorp/aws` supports EKS Auto Mode (`compute_config`), EKS Access Entries, Pod Identity. `hashicorp/kubernetes` supports `kubernetes_runtime_class_v1`, `kubernetes_deployment_v1`, `kubernetes_namespace_v1`. | Native Terraform modules (`aws` + `kubernetes` providers). No workarounds or `local-exec` required. | Workloads run on dynamically managed Nitro instance types (e.g. `c6a.large`, `c6i.xlarge`). Confidential mode integrates with `/dev/nsm` attestation. |
-| **AWS KMS Envelope & Attestation** | **Hardware Attestation**: Key releases conditioned on Nitro PCR measurements (`kms:RecipientAttestation:ImageSha384`). | **Full / Native**: `aws_kms_key` resource with scoped condition policies and CloudWatch Logs service access. | KMS Customer Managed Key (CMK) configured for secrets encryption and cryptographic attestation validation. | Enforces zero-trust cryptographic guarantees. |
-| **Network & Pod Security** | **Restricted Security Posture**: Pod Security Standards enforced: `restricted`, with default-deny Kubernetes NetworkPolicies. | **Full / Native**: `kubernetes_network_policy_v1` and `kubernetes_namespace_v1`. | Egress scoped to DNS (UDP/TCP 53) and HTTPS (TCP 443). Workload drops all Linux capabilities and runs as non-root UID 101. | Prevents lateral network movement and container privilege escalation. |
+AWS Nitro Sandboxes provide two distinct isolation tiers on Amazon EKS:
+
+| Dimension | `isolated-sandbox` | `confidential-sandbox` |
+|---|---|---|
+| **Primary Objective** | **Blast Radius Containment**: Prevent untrusted code from breaking out to the host or peer workloads. | **Zero-Trust Confidentiality**: Protect sensitive proprietary code, models, or data from host administrators and infrastructure. |
+| **Trust Model** | Underlying EC2 host and node operators are trusted; running container code is untrusted. | Host operators, hypervisor admins, and neighboring pods are untrusted. Workload identity is cryptographically validated. |
+| **Kernel Isolation** | Dedicated ephemeral guest Linux kernel per pod. | Dedicated ephemeral guest Linux kernel per pod. |
+| **Memory Isolation** | Hardware-isolated memory slice partitioned by Nitro Hypervisor. | Hardware memory encryption and memory partitioning by Nitro Hypervisor. |
+| **Policy Enforcement** | Standard Linux capabilities and container security context. | **Cedar Policy Engine**: Evaluated by the in-guest sandbox agent against the pod specification. |
+| **Interactive Access (`exec` / `stdin`)** | Supported over vsock channel using standard Kubernetes RBAC. | Governed/restricted by the Cedar policy embedded at admission time. |
+| **Cryptographic Attestation** | Not applicable. | **Mandatory**: Nitro Secure Module issues signed attestation containing PCR17 (Cedar policy hash) and PCR8 (`eks.amazonaws.com`). |
+| **AWS KMS Secret Release** | Standard IAM role permissions. | Gated on `kms:RecipientAttestation:PCR17` and `kms:RecipientAttestation:PCR8:ServiceName`. |
+| **Pod Container Sharing** | Containers inside the same pod share the same microVM. | Containers inside the same pod share the same microVM. |
 
 ---
 
-## 5. Prerequisites
+## 5. Cedar Policy & Attestation Workflow
 
-Before deploying, ensure you have the following CLI utilities installed:
-- [Terraform](https://developer.hashicorp.com/terraform/install) `>= 1.6.0` (Verified with `v1.16.2`)
+In **confidential mode**, workloads require a reproducible Cedar policy generated from the exact pod specification using `eks-nitro-sandbox-genpolicy`:
+
+1. **Manifest Preparation**: The pod manifest specifies immutable container image digests (`image@sha256:...`), commands, environment variables, mounts, and security contexts.
+2. **Policy Generation**:
+   ```bash
+   eks-nitro-sandbox-genpolicy --profile confidential pod-manifest.yaml
+   ```
+   This outputs:
+   - Base64-encoded Cedar policy string.
+   - Predicted **PCR17** measurement hash.
+3. **Pod Annotation**: The base64 string is attached to the pod template:
+   ```yaml
+   metadata:
+     annotations:
+       sandbox.amazonaws.com/policy: "<BASE64_CEDAR_POLICY>"
+   spec:
+     runtimeClassName: confidential-sandbox
+   ```
+4. **KMS Policy Binding**: The KMS key policy restricts decryption strictly to requests presenting matching attestation:
+   ```json
+   "Condition": {
+     "StringEquals": {
+       "kms:RecipientAttestation:PCR17": "<PREDICTED_PCR17_HASH>",
+       "kms:RecipientAttestation:PCR8:ServiceName": "eks.amazonaws.com"
+     }
+   }
+   ```
+5. **Regeneration Requirement**: If any aspect of the pod template changes (image digest, args, environment variables, mounts), the Cedar policy must be regenerated and the KMS PCR17 condition updated accordingly.
+
+---
+
+## 6. Prerequisites
+
+- [Terraform](https://developer.hashicorp.com/terraform/install) `>= 1.6.0`
 - [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html) `>= 2.15.0`
 - [kubectl](https://kubernetes.io/docs/tasks/tools/) `>= 1.30.0`
-- [TFLint](https://github.com/terraform-linters/tflint) `>= 0.50.0`
-- [Trivy](https://trivy.dev/) `>= 0.49.0`
-- An active AWS Account with permissions to create VPCs, IAM Roles, KMS Keys, and EKS Clusters.
+- Configured AWS credentials with permissions for VPC, IAM, KMS, and EKS.
 
 ---
 
-## 6. AWS Region & Instance Requirements
+## 7. AWS Region & Instance Requirements
 
-- **Supported AWS Regions**: All AWS Regions offering EKS Auto Mode and modern Nitro instance families (`us-east-1`, `us-east-2`, `us-west-2`, `eu-west-1`, `eu-central-1`, `ap-northeast-1`, `ap-southeast-1`).
-- **Supported EC2 Instance Families**:
-  - Intel: `c6i`, `m6i`, `r6i`, `c7i`, `m7i`
-  - AMD: `c6a`, `m6a`, `r6a`
-  - Graviton: `c7g`, `m7g`, `r7g`, `c8g`
-
----
-
-## 7. Terraform Provider Requirements
-
-```hcl
-terraform {
-  required_version = ">= 1.6.0"
-
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 6.0" # Minimum 5.80.0
-    }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "~> 2.35"
-    }
-  }
-}
-```
+- **Kubernetes Version**: Requires **Kubernetes 1.36 or later** for native AWS Nitro Sandboxes support on Amazon EKS.
+- **Supported AWS Regions**: Regions with EKS Auto Mode support (e.g., `us-east-1`, `us-east-2`, `us-west-2`, `eu-west-1`, `eu-central-1`, `ap-northeast-1`).
+- **Supported EC2 Instance Families**: Nitro-based instances supporting hardware virtualization and enclaves (e.g. `c6i`, `m6i`, `r6i`, `c6a`, `m6a`, `r6a`, `c7g`, `m7g`). EKS Auto Mode handles compatible node provisioning automatically.
 
 ---
 
 ## 8. Repository Structure
 
 ```text
-terraform-aws-nitro-sandbox/
+.
 ├── vpc.tf                     # Multi-AZ VPC, private/public subnets, NAT Gateway, Flow Logs
-├── iam.tf                     # Minimal cluster, node, and Pod Identity roles
-├── kms.tf                     # Envelope encryption & dynamic NSM attestation policy
-├── eks.tf                     # EKS cluster with Auto Mode compute/storage/networking
-├── kubernetes.tf              # Dynamic RuntimeClasses, namespace, network policies, sample workload
-├── variables.tf               # Validated variables supporting list-based sandbox_modes
-├── outputs.tf                 # Cluster endpoints, KMS ARNs, dynamic RuntimeClasses
-├── providers.tf               # AWS and Kubernetes provider declarations
-├── versions.tf                # Strict provider constraints (AWS >= 5.80, K8s >= 2.35)
-├── isolated.tfvars            # Pre-packaged tfvars: sandbox_modes = ["isolated"]
-├── confidential.tfvars        # Pre-packaged tfvars: sandbox_modes = ["confidential"]
-├── terraform.tfvars.example   # Dual-mode example: sandbox_modes = ["isolated", "confidential"]
+├── iam.tf                     # EKS Auto Mode cluster, node, and Pod Identity IAM roles
+├── kms.tf                     # Envelope encryption & PCR17/PCR8 attestation policy
+├── eks.tf                     # EKS cluster with Auto Mode compute, storage, and networking
+├── kubernetes.tf              # Namespace, network policies, isolated & confidential workloads
+├── variables.tf               # Validated variables (Kubernetes 1.36+, sandbox_modes list)
+├── outputs.tf                 # Cluster endpoints, KMS ARNs, verify commands
+├── providers.tf               # AWS (>= 6.0) and Kubernetes (>= 2.35) providers
+├── versions.tf                # Provider version constraints and lockfile
+├── isolated.tfvars            # Preset: sandbox_modes = ["isolated"]
+├── confidential.tfvars        # Preset: sandbox_modes = ["confidential"] with PCR17 hash
+├── terraform.tfvars.example   # Dual-mode example: isolated + confidential
 ├── tests/
-│   └── eks_validation.tftest.hcl  # Native Terraform unit tests
+│   └── eks_validation.tftest.hcl  # Native Terraform unit and mock tests
 ├── scripts/
-│   └── verify_sandbox.sh      # Pod isolation & runtime class verification script
-├── docs/
-│   ├── architecture.md             # Deep dive architecture reference
-│   ├── compatibility_matrix.md     # Detailed service & provider matrix
-│   ├── security_and_threat_model.md # Threat model & defense-in-depth guide
-│   ├── cost_and_performance.md     # Cost model & benchmark methodology
-│   ├── article_outline.md          # Technical article outline
-│   └── aws_nitro_sandboxes_article.md # Full publication-ready technical article
-├── .github/
-│   └── workflows/
-│       └── ci.yml             # GitHub Actions CI (fmt, validate, lint, scan, test)
-├── Makefile                   # Developer automation targets
-├── .gitignore                 # Standard Terraform git ignore rules
-└── README.md                  # This document
+│   └── verify_sandbox.sh      # Operational verification script
+├── Makefile                   # Automation targets (validate, test, plan)
+├── .gitignore                 # Standard Terraform ignore rules
+└── README.md                  # Comprehensive architectural guide
 ```
 
 ---
 
 ## 9. Deployment Instructions
 
-### Step 1: Clone and Configure
+### Step 1: Select Configuration Preset
 
 ```bash
-git clone https://github.com/aws-samples/terraform-aws-nitro-sandbox.git
-cd terraform-aws-nitro-sandbox
-
-# Option A: Deploy using the pre-configured isolated sandbox vars
+# Option A: Deploy Isolated Sandboxes only
 cp isolated.tfvars terraform.tfvars
 
-# Option B: Deploy using the pre-configured confidential sandbox vars
+# Option B: Deploy Confidential Sandboxes with Attestation
 # cp confidential.tfvars terraform.tfvars
 
-# Option C: Deploy dual-mode (isolated + confidential side-by-side)
+# Option C: Deploy Dual-Mode (Isolated + Confidential side-by-side)
 # cp terraform.tfvars.example terraform.tfvars
 ```
-
-Configure `sandbox_modes` as a list in `terraform.tfvars`:
-- `sandbox_modes = ["isolated"]` for standard hardware-isolated microVMs.
-- `sandbox_modes = ["confidential"]` for confidential computing with cryptographic attestation.
-- `sandbox_modes = ["isolated", "confidential"]` for both modes side-by-side in the same cluster.
 
 ### Step 2: Initialize and Validate Locally
 
 ```bash
-# Initialize Terraform
-make init
+# Initialize providers
+terraform init -backend=false
 
-# Validate syntax and formatting
-make validate
+# Validate syntax and rules
+terraform fmt -check -recursive
+terraform validate
 
-# Run TFLint and security scans
-make lint
-make scan
-
-# Run automated unit tests
-make test
+# Run native unit tests
+terraform test
 ```
 
 ### Step 3: Review Execution Plan
 
 ```bash
-# Plan with default variables
 terraform plan -out=tfplan
-
-# Or plan with a specific preset:
-# make plan-isolated
-# make plan-confidential
 ```
 
-### Step 4: Apply (Deploy Infrastructure)
-
-> [!IMPORTANT]
-> Running `terraform apply` provisions live AWS resources including an EKS cluster, NAT Gateway, and EC2 compute. Confirm authorization before applying.
+### Step 4: Apply (Interactive Review)
 
 ```bash
 terraform apply tfplan
@@ -291,9 +277,10 @@ terraform apply tfplan
 
 ### Step 5: Configure Kubectl Context
 
+Run the explicit update-kubeconfig command:
+
 ```bash
-# Obtain the exact update-kubeconfig command from Terraform outputs
-$(terraform output -raw kubeconfig_update_command)
+aws eks update-kubeconfig --region us-east-1 --name nitro-sandbox-eks
 ```
 
 ---
@@ -302,144 +289,126 @@ $(terraform output -raw kubeconfig_update_command)
 
 ### Deploying an Isolated Workload
 
-To run a container inside a hardware-isolated Nitro Sandbox, add `runtimeClassName: isolated-sandbox` to your pod specification:
-
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: isolated-ai-agent
+  name: isolated-workload
   namespace: nitro-sandboxes
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: isolated-ai-agent
+      app: isolated-workload
   template:
     metadata:
       labels:
-        app: isolated-ai-agent
+        app: isolated-workload
     spec:
-      runtimeClassName: isolated-sandbox  # <-- Enforces Nitro Sandbox MicroVM
+      runtimeClassName: isolated-sandbox  # Built-in Auto Mode RuntimeClass
       serviceAccountName: sandbox-workload-sa
       containers:
-      - name: agent-runtime
-        image: public.ecr.aws/docker/library/busybox:1.36.1
-        command: ["/bin/sh", "-c", "while true; do sleep 3600; done"]
+      - name: app
+        image: public.ecr.aws/nginx/nginx-unprivileged:alpine
         securityContext:
           allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
           runAsNonRoot: true
-          runAsUser: 10001
+          runAsUser: 101
           capabilities:
             drop: ["ALL"]
 ```
 
-### Deploying a Confidential Workload with Attestation
+### Deploying a Confidential Workload
 
-For confidential workloads that seal secrets against untrusted node operators:
-
-1. Build your container and record its SHA-384 measurement digest.
-2. Update `confidential_expected_image_digest` in `terraform.tfvars`.
-3. Set `runtimeClassName: confidential-sandbox` in your pod specification.
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: confidential-workload
+  namespace: nitro-sandboxes
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: confidential-workload
+  template:
+    metadata:
+      labels:
+        app: confidential-workload
+      annotations:
+        sandbox.amazonaws.com/policy: "<BASE64_CEDAR_POLICY>"
+    spec:
+      runtimeClassName: confidential-sandbox  # Built-in Auto Mode RuntimeClass
+      serviceAccountName: sandbox-workload-sa
+      containers:
+      - name: app
+        # Immutable digest is required for reproducible attestation
+        image: public.ecr.aws/nginx/nginx-unprivileged@sha256:455dc8d655f41dd2944b58e727fdb3132e1d701765c92c474dcf7a6e74b9e27c
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 101
+          capabilities:
+            drop: ["ALL"]
+```
 
 ---
 
 ## 11. Verification Procedures
 
-Execute the included verification script:
+Execute the included operational verification script:
 
 ```bash
 ./scripts/verify_sandbox.sh nitro-sandboxes nitro-sandbox-eks us-east-1
 ```
 
-### Expected Output
+### Verification Capabilities & Scope
 
-```text
-========================================================================
-          AWS Nitro Sandbox Verification on Amazon EKS
-========================================================================
-Cluster:   nitro-sandbox-eks
-Region:    us-east-1
-Namespace: nitro-sandboxes
-Timestamp: 2026-11-09T23:00:00Z
-========================================================================
-
-[Step 1/5] Checking Kubernetes cluster connectivity...
-[+] Connected to EKS cluster successfully.
-
-[Step 2/5] Inspecting Kubernetes RuntimeClasses...
-[+] Found 'isolated-sandbox' RuntimeClass:
-NAME               HANDLER            AGE
-isolated-sandbox   isolated-sandbox   12m
-[+] Found 'confidential-sandbox' RuntimeClass:
-NAME                   HANDLER                AGE
-confidential-sandbox   confidential-sandbox   12m
-
-[Step 3/5] Listing pods in 'nitro-sandboxes' namespace...
-NAME                                    READY   STATUS    RESTARTS   AGE   IP
-nitro-sandbox-sample-774f964598-c625k   1/1     Running   0          10m   10.0.16.142
-nitro-sandbox-sample-774f964598-d89z7   1/1     Running   0          10m   10.0.16.143
-
-[Step 4/5] Verifying Pod RuntimeClass configuration...
---- Inspecting Pod: nitro-sandbox-sample-774f964598-c625k ---
-  Status:           Running
-  Assigned Node:    ip-10-0-16-52.ec2.internal
-  runtimeClassName: isolated-sandbox
-  [+] Pod is explicitly assigned to AWS Nitro Sandbox runtime 'isolated-sandbox'.
-
-[Step 5/5] Testing container-level security constraints...
-Executing security checks inside 'nitro-sandbox-sample-774f964598-c625k'...
-  Testing PID namespace isolation: Detected 2 processes (isolated PID tree).
-  Testing non-root execution: PASS (running as non-root UID: 10001)
-  Testing read-only root filesystem: PASS (root filesystem is read-only)
-
-========================================================================
-Verification Complete.
-========================================================================
-```
+1. **Static Validation**: Verifies HCL syntax, provider constraints, and resource references.
+2. **Terraform Plan Validation**: Verifies plan composition against mock or live AWS accounts.
+3. **Cluster Posture**: Validates that workloads reference built-in `isolated-sandbox` or `confidential-sandbox` RuntimeClasses and enforce restricted Pod Security Standards.
+4. **Hardware Isolation Boundary**: Hardware microVM isolation and memory encryption are enforced directly by the AWS Nitro Hypervisor. Standard in-guest checks (such as PID and UID inspection) verify container-level sandboxing, while hardware guarantees are established via Nitro attestation documents.
 
 ---
 
 ## 12. Security Considerations & Threat Model
 
-See [`docs/security_and_threat_model.md`](docs/security_and_threat_model.md) for the exhaustive security architecture.
-
-### Defense-in-Depth Summary
-
-1. **Host-Level Isolation**: Nitro Hypervisor isolates memory and CPU cores; container breakout vulnerabilities cannot jump to the parent host or peer pods.
-2. **Network Perimeter**: EKS worker nodes run in private subnets with no public IPs. NetworkPolicies enforce a default-deny ingress posture and strictly whitelist outbound DNS (UDP 53) and HTTPS (TCP 443).
-3. **Least Privilege IAM**:
-   - Cluster uses modern modular EKS policies (`AmazonEKSComputePolicy`, `AmazonEKSBlockStoragePolicy`).
-   - Auto Mode nodes use `AmazonEKSWorkerNodeMinimalPolicy` and `AmazonEC2ContainerRegistryPullOnly`.
-   - Workload IAM roles use EKS Pod Identity with scoped KMS decrypt permissions.
-4. **IMDSv2 Enforced**: Instance Metadata Service v2 with `http_tokens = "required"` and hop limit `1` is enforced across all compute instances.
+1. **Hardware MicroVM Boundary**: Nitro Sandboxes execute with a dedicated guest Linux kernel. In contrast to standard containers where a kernel exploit breaks into the host, microVM escapes are blocked by the hypervisor hardware boundary.
+2. **Network Perimeter**: Worker nodes reside in private subnets. Kubernetes NetworkPolicies enforce a default-deny posture, whitelisting only essential DNS (UDP/TCP 53) and HTTPS (TCP 443) outbound traffic.
+3. **Optional Network Isolation**: Applying `sandbox.amazonaws.com/network-isolated: "true"` boots the microVM without virtio-net interfaces, eliminating network egress. Note that this also restricts DNS resolution, NTP, IMDS, and Pod Identity credential renewal over the network.
+4. **Least-Privilege IAM**:
+   - Cluster role attaches modular Auto Mode policies (`AmazonEKSComputePolicy`, `AmazonEKSBlockStoragePolicyV2`, `AmazonEKSLoadBalancingPolicy`, `AmazonEKSNetworkingPolicy`).
+   - Node role uses `AmazonEKSWorkerNodeMinimalPolicy` and `AmazonEC2ContainerRegistryPullOnly`.
+   - Workload IAM role is assumed via EKS Pod Identity with scoped permissions.
 
 ---
 
-## 13. Cost Considerations & Performance
+## 13. Cost Considerations & Infrastructure Analysis
 
-See [`docs/cost_and_performance.md`](docs/cost_and_performance.md) for detailed pricing formulas.
-
-- **Baseline Development Cost**: ~$235.30 / month (EKS control plane, 1 NAT Gateway, 1 `c6i.xlarge` instance 24/7).
-- **Multi-Tenant Savings**: Bin-packing 50 tenant workloads into Nitro Sandboxes achieves a **~68% cost reduction** compared to deploying 50 dedicated EC2 instances.
-- **MicroVM Overhead**: Cold start latency is ~1.2s - 2.5s (compared to ~400ms for `runc`). CPU/compute performance is within 1-3% of bare metal.
+- **AWS Nitro Sandboxes Pricing**: There is **no additional charge** for AWS Nitro Sandboxes itself. You pay only for the underlying compute instances and EKS Auto Mode services.
+- **Fixed Infrastructure Costs**:
+  - Amazon EKS Cluster Management Fee: $0.10/hour (~$73.00/month).
+  - Single NAT Gateway (us-east-1): ~$0.045/hour (~$32.85/month) plus data processing charges.
+  - VPC Flow Logs & CloudWatch storage: Dependent on log volume.
+- **Compute Efficiency**:
+  - Running multi-tenant workloads in microVMs on shared instances avoids provisioning 1 full EC2 instance per tenant.
+  - Actual cost savings depend on workload bin-packing density, vCPU/RAM allocation, and instance family selection. Meaningful cost comparisons must evaluate equivalent total vCPU and memory capacity.
 
 ---
 
 ## 14. Troubleshooting
 
 ### Issue 1: Pod stuck in `Pending` with `FailedScheduling`
-- **Cause**: EKS Auto Mode or Karpenter has not yet provisioned a node with a Nitro-supported instance family.
-- **Resolution**: Check Auto Mode node pools using `kubectl get nodepools` or verify that the cluster VPC has sufficient available private IP addresses in its subnets.
+- **Cause**: EKS Auto Mode is provisioning compute capacity or matching instance requirements.
+- **Resolution**: Check Auto Mode node provisioning and verify subnet available IPs in the VPC.
 
-### Issue 2: `RuntimeClass` not found
-- **Cause**: Variable `manage_runtime_classes` was set to `false` and Auto Mode did not automatically inject the runtime class.
-- **Resolution**: Ensure `manage_runtime_classes = true` in your `terraform.tfvars` so Terraform creates the `kubernetes_runtime_class_v1` definitions.
+### Issue 2: Confidential Pod Rejected
+- **Cause**: The Cedar policy annotation `sandbox.amazonaws.com/policy` is missing, invalid, or does not match the deployed pod template.
+- **Resolution**: Re-run `eks-nitro-sandbox-genpolicy` against the exact pod specification and update the pod annotation and KMS PCR17 condition.
 
-### Issue 3: KMS Decrypt Access Denied in Confidential Mode
-- **Cause**: The container image digest did not match `confidential_expected_image_digest` in the KMS key policy condition.
-- **Resolution**: Re-compute the SHA-384 digest of your container image (e.g. using `sha384sum` or container image hash) and update `confidential_expected_image_digest` in `terraform.tfvars`.
+### Issue 3: KMS Decrypt Access Denied
+- **Cause**: The attestation document PCR17 hash does not match the KMS key policy condition or service principal is not `eks.amazonaws.com`.
+- **Resolution**: Verify that the predicted PCR17 value in `confidential_expected_pcr17` matches the generated policy hash.
 
 ---
 
@@ -448,34 +417,18 @@ See [`docs/cost_and_performance.md`](docs/cost_and_performance.md) for detailed 
 To destroy all deployed resources and prevent ongoing AWS charges:
 
 ```bash
-# Destroy all infrastructure via Terraform
-terraform destroy -auto-approve
+# 1. Generate and review destroy plan
+terraform plan -destroy -out=destroy.tfplan
 
-# Clean up local state caches
+# 2. Apply destruction
+terraform apply destroy.tfplan
+
+# 3. Clean local state files
 make clean
 ```
 
 ---
 
-## 16. Known Limitations & Operational Considerations
-
-### Cold-Start Latency
-Booting a dedicated guest Linux kernel and attaching `virtio` network interfaces introduces a ~1.2s - 2.2s startup latency (compared to ~400ms for standard `runc`). For long-running microservices, multi-tenant web applications, or persistent worker loops, this overhead is negligible. For sub-second ephemeral serverless bursts, this initialization latency should be accounted for.
-
-### Supported Instance Types
-Nitro Sandboxes require AWS Nitro-based EC2 instance families supporting Nitro Enclaves and MicroVM hardware partitioning (e.g. `c6i`, `m6i`, `r6i`, `c7g`, `m7g`, `c6a`). EKS Auto Mode manages this automatically by matching workloads to compatible node pools.
-
----
-
-## 17. Future Improvements
-
-- [ ] Automated attestation sidecar injector mutating webhook for Kubernetes.
-- [ ] Support for AWS Graviton4 (`c8g`) instance families upon regional GA.
-- [ ] Integration with HashiCorp Vault for dynamic secret delivery tied to NSM PCR measurements.
-- [ ] Native upstream support for `trusted_execution_configuration` in `hashicorp/aws`.
-
----
-
-## License
+## 16. License
 
 This project is licensed under the Apache 2.0 License. See the [LICENSE](LICENSE) file for details.

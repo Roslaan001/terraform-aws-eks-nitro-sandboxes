@@ -1,7 +1,7 @@
 data "aws_caller_identity" "current" {}
 data "aws_partition" "current" {}
 
-# 1. Cluster IAM Role
+# 1. Cluster IAM Role for Amazon EKS Auto Mode
 resource "aws_iam_role" "cluster" {
   name_prefix = "${var.cluster_name}-cluster-role-"
   description = "IAM role assumed by Amazon EKS control plane"
@@ -35,9 +35,9 @@ resource "aws_iam_role_policy_attachment" "cluster_compute" {
   policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKSComputePolicy"
 }
 
-resource "aws_iam_role_policy_attachment" "cluster_block_storage" {
+resource "aws_iam_role_policy_attachment" "cluster_block_storage_v2" {
   role       = aws_iam_role.cluster.name
-  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKSBlockStoragePolicy"
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKSBlockStoragePolicyV2"
 }
 
 resource "aws_iam_role_policy_attachment" "cluster_load_balancing" {
@@ -50,7 +50,7 @@ resource "aws_iam_role_policy_attachment" "cluster_networking" {
   policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKSNetworkingPolicy"
 }
 
-# 2. EKS Auto Mode Node IAM Role
+# 2. EKS Auto Mode Worker Node IAM Role
 resource "aws_iam_role" "node" {
   name_prefix = "${var.cluster_name}-node-role-"
   description = "IAM role assumed by EKS Auto Mode worker nodes hosting Nitro Sandboxes"
@@ -81,11 +81,6 @@ resource "aws_iam_role_policy_attachment" "node_ecr_pull" {
   policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly"
 }
 
-resource "aws_iam_role_policy_attachment" "node_cni" {
-  role       = aws_iam_role.node.name
-  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKS_CNI_Policy"
-}
-
 # 3. Workload Pod Identity IAM Role
 resource "aws_iam_role" "workload" {
   name_prefix = "${var.cluster_name}-workload-role-"
@@ -112,7 +107,7 @@ resource "aws_iam_role" "workload" {
 
 resource "aws_iam_policy" "workload_permissions" {
   name_prefix = "${var.cluster_name}-workload-policy-"
-  description = "Least privilege permissions for sandboxed workloads"
+  description = "Least-privilege permissions for sandboxed workloads"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -127,11 +122,12 @@ resource "aws_iam_policy" "workload_permissions" {
         Resource = "arn:${data.aws_partition.current.partition}:logs:${var.aws_region}:*:log-group:/aws/eks/${var.cluster_name}/sandboxes/*"
       },
       {
-        Sid    = "AllowAttestedKMSDecrypt"
+        Sid    = "AllowKMSOperations"
         Effect = "Allow"
         Action = [
           "kms:Decrypt",
-          "kms:GenerateDataKey"
+          "kms:GenerateDataKey",
+          "kms:DescribeKey"
         ]
         Resource = aws_kms_key.eks.arn
       }

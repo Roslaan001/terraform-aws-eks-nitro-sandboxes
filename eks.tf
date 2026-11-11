@@ -58,7 +58,7 @@ resource "aws_eks_cluster" "this" {
   depends_on = [
     aws_iam_role_policy_attachment.cluster_eks,
     aws_iam_role_policy_attachment.cluster_compute,
-    aws_iam_role_policy_attachment.cluster_block_storage,
+    aws_iam_role_policy_attachment.cluster_block_storage_v2,
     aws_iam_role_policy_attachment.cluster_load_balancing,
     aws_iam_role_policy_attachment.cluster_networking,
     aws_cloudwatch_log_group.eks

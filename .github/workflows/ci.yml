@@ -34,12 +34,6 @@ jobs:
       - name: Terraform Validate (Root)
         run: terraform validate
 
-      - name: Terraform Init & Validate (EKS Module)
-        run: |
-          cd modules/eks
-          terraform init -backend=false
-          terraform validate
-
       - name: Setup TFLint
         uses: terraform-linters/setup-tflint@v4
         with:

@@ -49,7 +49,7 @@ output "eks_sandbox_modes" {
 }
 
 output "eks_runtime_classes" {
-  description = "Configured Nitro Sandbox Kubernetes RuntimeClasses"
+  description = "Built-in EKS Auto Mode Nitro Sandbox RuntimeClasses referenced by workloads"
   value = {
     for mode in var.sandbox_modes : mode => "${mode}-sandbox"
   }
@@ -57,7 +57,10 @@ output "eks_runtime_classes" {
 
 output "sample_deployments" {
   description = "Names of the deployed sample sandboxed workloads"
-  value       = [for k, d in kubernetes_deployment_v1.sample_workload : d.metadata[0].name]
+  value = concat(
+    [for d in kubernetes_deployment_v1.isolated_workload : d.metadata[0].name],
+    [for d in kubernetes_deployment_v1.confidential_workload : d.metadata[0].name]
+  )
 }
 
 output "kubeconfig_update_command" {
