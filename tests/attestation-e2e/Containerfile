@@ -1,0 +1,5 @@
+FROM public.ecr.aws/docker/library/busybox@sha256:66a6306db78bf2dbf3487f293aa8d6990d8e506fdffab9cc43fe422becf886e4
+COPY value.txt /attest-test/value.txt
+COPY check.sh /attest-test/check.sh
+USER 1000:1000
+ENTRYPOINT ["/bin/sh", "/attest-test/check.sh"]
