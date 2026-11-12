@@ -148,7 +148,7 @@ AWS Nitro Sandboxes provide two distinct isolation tiers on Amazon EKS:
 | **Primary Objective** | **Blast Radius Containment**: Prevent untrusted code from breaking out to the host or peer workloads. | **Zero-Trust Confidentiality**: Protect sensitive proprietary code, models, or data from host administrators and infrastructure. |
 | **Trust Model** | Underlying EC2 host and node operators are trusted; running container code is untrusted. | Host operators, hypervisor admins, and neighboring pods are untrusted. Workload identity is cryptographically validated. |
 | **Kernel Isolation** | Per-pod guest Linux kernel. | Per-pod guest Linux kernel. |
-| **Memory Isolation** | Memory partitioned by the Nitro Hypervisor without hardware encryption. | Hardware memory encryption (AMD SEV-SNP) and memory partitioning by Nitro Hypervisor. |
+| **Memory Isolation** | Memory partitioned by the Nitro Hypervisor. | Memory partitioned by the Nitro Hypervisor; see the AWS Nitro Sandboxes documentation for confidential-mode memory protections. |
 | **Policy Enforcement** | Standard Linux capabilities and container security context. | **Cedar Policy Engine**: Evaluated by the in-guest sandbox agent against the pod specification. |
 | **Interactive Access (`exec` / `stdin`)** | Supported over vsock channel using standard Kubernetes RBAC. | Governed/restricted by the Cedar policy embedded at admission time. |
 | **Cryptographic Attestation** | Not applicable. | **Mandatory**: Nitro Secure Module issues signed attestation containing PCR17 (Cedar policy hash) and PCR8 (`eks.amazonaws.com`). |
@@ -367,7 +367,7 @@ Execute the included operational verification script:
 1. **Static Validation**: Verifies HCL syntax, provider constraints, and resource references.
 2. **Terraform Plan Validation**: Verifies plan composition against mock or live AWS accounts.
 3. **Cluster Posture**: Validates that workloads reference built-in `isolated-sandbox` or `confidential-sandbox` RuntimeClasses and enforce restricted Pod Security Standards.
-4. **Hardware Isolation Boundary**: MicroVM-based isolation is managed directly by the AWS Nitro Hypervisor, with CPU scheduling managed by the hypervisor across time-slices. Hardware memory encryption (AMD SEV-SNP) is present in confidential mode and absent in isolated mode. Software verification commands (`ps aux`, `id`, `uname`) verify Kubernetes and guest container configuration, not hypervisor hardware virtualization. Cryptographic attestation documents cryptographically establish confidential workload identity.
+4. **Hardware Isolation Boundary**: MicroVM-based isolation is managed directly by the AWS Nitro Hypervisor, with CPU scheduling managed by the hypervisor across time-slices. Software verification commands (`ps aux`, `id`, `uname`) verify Kubernetes and guest container configuration, not hypervisor hardware virtualization. Cryptographic attestation documents cryptographically establish confidential workload identity.
 
 ---
 

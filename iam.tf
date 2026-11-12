@@ -90,6 +90,7 @@ resource "aws_iam_role" "workload" {
     Version = "2012-10-17"
     Statement = [
       {
+        Sid    = "AllowEksAuthToAssumeRoleForPodIdentity"
         Effect = "Allow"
         Principal = {
           Service = "pods.eks.amazonaws.com"
@@ -98,16 +99,14 @@ resource "aws_iam_role" "workload" {
           "sts:AssumeRole",
           "sts:TagSession"
         ]
-      },
-      {
-        Effect = "Allow"
-        Principal = {
-          AWS = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:root"
+        Condition = {
+          StringEquals = {
+            "aws:SourceAccount" = data.aws_caller_identity.current.account_id
+          }
+          ArnEquals = {
+            "aws:SourceArn" = "arn:${data.aws_partition.current.partition}:eks:${var.aws_region}:${data.aws_caller_identity.current.account_id}:cluster/${var.cluster_name}"
+          }
         }
-        Action = [
-          "sts:AssumeRole",
-          "sts:TagSession"
-        ]
       }
     ]
   })

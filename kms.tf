@@ -56,10 +56,14 @@ resource "aws_kms_key" "eks" {
         }
       ],
       # Confidential Sandbox Attestation statements:
-      # Explicitly deny unattested decryption, and permit decrypt when valid PCR17 and PCR8 attestation is presented
+      # EnableIAMUserPermissions (account root) delegates KMS authorization to IAM policies, so the
+      # gated Allow below is NOT the only authorization path. The two explicit Deny statements are the
+      # critical attestation controls: they override any Allow (key policy, IAM policy, or grant).
+      # Explicitly deny decryption if EITHER PCR17 or PCR8 fails to match the expected attestation values.
+      # Separate statements ensure independent evaluation (logical OR across Deny statements).
       contains(var.sandbox_modes, "confidential") ? [
         {
-          Sid    = "DenyUnattestedConfidentialWorkloadDecrypt"
+          Sid    = "DenyConfidentialWorkloadMismatchedPCR17"
           Effect = "Deny"
           Principal = {
             AWS = aws_iam_role.workload.arn
@@ -71,7 +75,23 @@ resource "aws_kms_key" "eks" {
           Resource = "*"
           Condition = {
             StringNotEqualsIgnoreCase = {
-              "kms:RecipientAttestation:PCR17"            = var.confidential_expected_pcr17
+              "kms:RecipientAttestation:PCR17" = var.confidential_expected_pcr17
+            }
+          }
+        },
+        {
+          Sid    = "DenyConfidentialWorkloadMismatchedPCR8"
+          Effect = "Deny"
+          Principal = {
+            AWS = aws_iam_role.workload.arn
+          }
+          Action = [
+            "kms:Decrypt",
+            "kms:GenerateDataKey"
+          ]
+          Resource = "*"
+          Condition = {
+            StringNotEqualsIgnoreCase = {
               "kms:RecipientAttestation:PCR8:ServiceName" = "eks.amazonaws.com"
             }
           }
