@@ -111,27 +111,56 @@ resource "aws_iam_policy" "workload_permissions" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "AllowCloudWatchLogs"
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
-        ]
-        Resource = "arn:${data.aws_partition.current.partition}:logs:${var.aws_region}:*:log-group:/aws/eks/${var.cluster_name}/sandboxes/*"
-      },
-      {
-        Sid    = "AllowKMSOperations"
-        Effect = "Allow"
-        Action = [
-          "kms:Decrypt",
-          "kms:GenerateDataKey",
-          "kms:DescribeKey"
-        ]
-        Resource = aws_kms_key.eks.arn
-      }
-    ]
+    Statement = concat(
+      [
+        {
+          Sid    = "AllowCloudWatchLogs"
+          Effect = "Allow"
+          Action = [
+            "logs:CreateLogStream",
+            "logs:PutLogEvents"
+          ]
+          Resource = "arn:${data.aws_partition.current.partition}:logs:${var.aws_region}:*:log-group:/aws/eks/${var.cluster_name}/sandboxes/*"
+        }
+      ],
+      contains(var.sandbox_modes, "confidential") ? [
+        {
+          Sid      = "AllowKMSDescribeOnly"
+          Effect   = "Allow"
+          Action   = ["kms:DescribeKey"]
+          Resource = aws_kms_key.eks.arn
+        }
+      ] : [],
+      contains(var.sandbox_modes, "confidential") ? [
+        {
+          Sid    = "AllowKMSDecryptWithAttestation"
+          Effect = "Allow"
+          Action = [
+            "kms:Decrypt",
+            "kms:GenerateDataKey"
+          ]
+          Resource = aws_kms_key.eks.arn
+          Condition = {
+            StringEquals = {
+              "kms:RecipientAttestation:PCR17"            = var.confidential_expected_pcr17
+              "kms:RecipientAttestation:PCR8:ServiceName" = "eks.amazonaws.com"
+            }
+          }
+        }
+      ] : [],
+      !contains(var.sandbox_modes, "confidential") && contains(var.sandbox_modes, "isolated") ? [
+        {
+          Sid    = "AllowKMSOperations"
+          Effect = "Allow"
+          Action = [
+            "kms:Decrypt",
+            "kms:GenerateDataKey",
+            "kms:DescribeKey"
+          ]
+          Resource = aws_kms_key.eks.arn
+        }
+      ] : []
+    )
   })
 }
 
