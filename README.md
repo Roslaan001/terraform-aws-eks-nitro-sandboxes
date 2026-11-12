@@ -36,7 +36,7 @@ Traditionally, security teams faced an uncompromising choice when deploying mult
 1. **Shared Kubernetes nodes**: Fast and dense, but a single Linux kernel vulnerability (`dirty pipe`, `overlayfs` exploits) allows a container breakout to compromise the host and neighboring workloads.
 2. **Dedicated EC2 instances per tenant**: Strong hardware-level isolation, but cost-prohibitive, wasteful in idle compute reservations, and sluggish during scale-out.
 
-Announced in November 2026 ([AWS What's New Announcement](https://aws.amazon.com/about-aws/whats-new/2026/11/nitro-sandboxes-eks-ecs-ec2/)), **AWS Nitro Sandboxes** resolve this trade-off by executing each pod inside a dedicated, lightweight virtual machine (microVM) directly powered by the AWS Nitro Hypervisor on a single shared EC2 instance at no extra compute charge beyond the underlying instance capacity.
+Announced in November 2026 ([AWS What's New Announcement](https://aws.amazon.com/about-aws/whats-new/2026/11/nitro-sandboxes-eks-ecs-ec2/)), **AWS Nitro Sandboxes** resolve this trade-off by executing each pod inside an isolated lightweight virtual machine (microVM) directly powered by the AWS Nitro Hypervisor on a single shared EC2 instance at no extra compute charge beyond the underlying instance capacity.
 
 This repository delivers:
 - **Amazon EKS Auto Mode Infrastructure**: Clean Terraform implementation leveraging built-in `RuntimeClass` resources (`isolated-sandbox` and `confidential-sandbox`), least-privilege IAM, envelope KMS encryption with CloudWatch integration, and Kubernetes NetworkPolicies.
@@ -65,7 +65,7 @@ AWS Nitro Sandboxes:
 ┌────────────────────────────────────────────────────────┐
 │ ┌─────────────────────────┐   ┌──────────────────────┐ │
 │ │ Pod A (Tenant 1)        │   │ Pod B (Tenant 2 / AI)│ │
-│ │ Dedicated Guest Kernel  │   │ Dedicated Guest Kernel││
+│ │ Per-Pod Guest Kernel    │   │ Per-Pod Guest Kernel │ │
 │ │ Nitro MicroVM Boundary  │   │ Nitro MicroVM Boundary││
 │ └───────────┬─────────────┘   └──────────┬───────────┘ │
 │             │ (virtio)                   │ (virtio)    │
@@ -76,7 +76,7 @@ AWS Nitro Sandboxes:
 └────────────────────────────────────────────────────────┘
 ```
 
-- **Dedicated Guest Kernel**: Every pod boots its own stripped-down Linux microVM kernel. System calls cannot reach the host kernel.
+- **Per-Pod Guest Kernel**: Every pod boots its own stripped-down Linux microVM kernel. System calls cannot reach the host kernel.
 - **MicroVM Shim**: Managed via `containerd-shim-nitro-sandbox-v2` on the host, communicating with an in-guest agent via `virtio` devices.
 - **Native Ecosystem**: Standard Kubernetes primitives (Amazon VPC CNI, EBS CSI driver, EKS Pod Identity, CloudWatch Container Insights) function seamlessly.
 - **Built-in Auto Mode RuntimeClasses**:
@@ -147,8 +147,8 @@ AWS Nitro Sandboxes provide two distinct isolation tiers on Amazon EKS:
 |---|---|---|
 | **Primary Objective** | **Blast Radius Containment**: Prevent untrusted code from breaking out to the host or peer workloads. | **Zero-Trust Confidentiality**: Protect sensitive proprietary code, models, or data from host administrators and infrastructure. |
 | **Trust Model** | Underlying EC2 host and node operators are trusted; running container code is untrusted. | Host operators, hypervisor admins, and neighboring pods are untrusted. Workload identity is cryptographically validated. |
-| **Kernel Isolation** | Dedicated ephemeral guest Linux kernel per pod. | Dedicated ephemeral guest Linux kernel per pod. |
-| **Memory Isolation** | Hardware-isolated memory slice partitioned by Nitro Hypervisor. | Hardware memory encryption and memory partitioning by Nitro Hypervisor. |
+| **Kernel Isolation** | Per-pod guest Linux kernel. | Per-pod guest Linux kernel. |
+| **Memory Isolation** | Memory partitioned by the Nitro Hypervisor without hardware encryption. | Hardware memory encryption (AMD SEV-SNP) and memory partitioning by Nitro Hypervisor. |
 | **Policy Enforcement** | Standard Linux capabilities and container security context. | **Cedar Policy Engine**: Evaluated by the in-guest sandbox agent against the pod specification. |
 | **Interactive Access (`exec` / `stdin`)** | Supported over vsock channel using standard Kubernetes RBAC. | Governed/restricted by the Cedar policy embedded at admission time. |
 | **Cryptographic Attestation** | Not applicable. | **Mandatory**: Nitro Secure Module issues signed attestation containing PCR17 (Cedar policy hash) and PCR8 (`eks.amazonaws.com`). |
@@ -367,13 +367,13 @@ Execute the included operational verification script:
 1. **Static Validation**: Verifies HCL syntax, provider constraints, and resource references.
 2. **Terraform Plan Validation**: Verifies plan composition against mock or live AWS accounts.
 3. **Cluster Posture**: Validates that workloads reference built-in `isolated-sandbox` or `confidential-sandbox` RuntimeClasses and enforce restricted Pod Security Standards.
-4. **Hardware Isolation Boundary**: Hardware microVM isolation and memory encryption are enforced directly by the AWS Nitro Hypervisor. Standard in-guest checks (such as PID and UID inspection) verify container-level sandboxing, while hardware guarantees are established via Nitro attestation documents.
+4. **Hardware Isolation Boundary**: MicroVM-based isolation is managed directly by the AWS Nitro Hypervisor, with CPU scheduling managed by the hypervisor across time-slices. Hardware memory encryption (AMD SEV-SNP) is present in confidential mode and absent in isolated mode. Software verification commands (`ps aux`, `id`, `uname`) verify Kubernetes and guest container configuration, not hypervisor hardware virtualization. Cryptographic attestation documents cryptographically establish confidential workload identity.
 
 ---
 
 ## 12. Security Considerations & Threat Model
 
-1. **Hardware MicroVM Boundary**: Nitro Sandboxes execute with a dedicated guest Linux kernel. In contrast to standard containers where a kernel exploit breaks into the host, microVM escapes are blocked by the hypervisor hardware boundary.
+1. **Hardware MicroVM Boundary**: Nitro Sandboxes execute with a per-pod guest Linux kernel managed by the Nitro Hypervisor. In contrast to standard containers where a kernel exploit compromises the shared host kernel, microVM escapes are blocked by the hypervisor hardware boundary.
 2. **Network Perimeter**: Worker nodes reside in private subnets. Kubernetes NetworkPolicies enforce a default-deny posture, whitelisting only essential DNS (UDP/TCP 53) and HTTPS (TCP 443) outbound traffic.
 3. **Optional Network Isolation**: Applying `sandbox.amazonaws.com/network-isolated: "true"` boots the microVM without virtio-net interfaces, eliminating network egress. Note that this also restricts DNS resolution, NTP, IMDS, and Pod Identity credential renewal over the network.
 4. **Least-Privilege IAM**:

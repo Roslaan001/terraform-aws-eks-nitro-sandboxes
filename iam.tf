@@ -98,6 +98,16 @@ resource "aws_iam_role" "workload" {
           "sts:AssumeRole",
           "sts:TagSession"
         ]
+      },
+      {
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action = [
+          "sts:AssumeRole",
+          "sts:TagSession"
+        ]
       }
     ]
   })
@@ -133,19 +143,13 @@ resource "aws_iam_policy" "workload_permissions" {
       ] : [],
       contains(var.sandbox_modes, "confidential") ? [
         {
-          Sid    = "AllowKMSDecryptWithAttestation"
+          Sid    = "AllowKMSDecryptForWorkload"
           Effect = "Allow"
           Action = [
             "kms:Decrypt",
             "kms:GenerateDataKey"
           ]
           Resource = aws_kms_key.eks.arn
-          Condition = {
-            StringEquals = {
-              "kms:RecipientAttestation:PCR17"            = var.confidential_expected_pcr17
-              "kms:RecipientAttestation:PCR8:ServiceName" = "eks.amazonaws.com"
-            }
-          }
         }
       ] : [],
       !contains(var.sandbox_modes, "confidential") && contains(var.sandbox_modes, "isolated") ? [

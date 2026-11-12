@@ -55,8 +55,27 @@ resource "aws_kms_key" "eks" {
           Resource = "*"
         }
       ],
-      # Confidential Sandbox Attestation statement: Strictly gated on PCR17 (Cedar policy hash) and PCR8 (EKS service)
+      # Confidential Sandbox Attestation statements:
+      # Explicitly deny unattested decryption, and permit decrypt when valid PCR17 and PCR8 attestation is presented
       contains(var.sandbox_modes, "confidential") ? [
+        {
+          Sid    = "DenyUnattestedConfidentialWorkloadDecrypt"
+          Effect = "Deny"
+          Principal = {
+            AWS = aws_iam_role.workload.arn
+          }
+          Action = [
+            "kms:Decrypt",
+            "kms:GenerateDataKey"
+          ]
+          Resource = "*"
+          Condition = {
+            StringNotEqualsIgnoreCase = {
+              "kms:RecipientAttestation:PCR17"            = var.confidential_expected_pcr17
+              "kms:RecipientAttestation:PCR8:ServiceName" = "eks.amazonaws.com"
+            }
+          }
+        },
         {
           Sid    = "EnforceNitroAttestationForConfidentialWorkloads"
           Effect = "Allow"
@@ -69,7 +88,7 @@ resource "aws_kms_key" "eks" {
           ]
           Resource = "*"
           Condition = {
-            StringEquals = {
+            StringEqualsIgnoreCase = {
               "kms:RecipientAttestation:PCR17"            = var.confidential_expected_pcr17
               "kms:RecipientAttestation:PCR8:ServiceName" = "eks.amazonaws.com"
             }
