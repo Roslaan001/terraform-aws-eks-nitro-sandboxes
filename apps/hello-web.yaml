@@ -1,0 +1,17 @@
+# ==============================================================================
+# REFERENCE WORKLOAD: Isolated Mode (Full Terraform Deployment)
+# ==============================================================================
+# NOTE: apps/main.tf automatically discovers and deploys EVERY *.yaml file in
+# this directory. This file serves as a reference implementation for an
+# isolated-mode unprivileged web application managed end-to-end by Terraform.
+#
+# - To deploy your own workload: add your own `<name>.yaml` file here.
+# - To skip deploying this demo: delete this file or rename it to .yaml.example.
+# ==============================================================================
+
+mode: isolated
+image: public.ecr.aws/nginx/nginx-unprivileged:alpine
+replicas: 2
+port: 8080
+allow_ingress: true
+run_as_user: 101

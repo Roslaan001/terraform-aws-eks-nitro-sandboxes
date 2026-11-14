@@ -1,0 +1,11 @@
+# Remote state for the apps stack. Use a different key from the platform stack.
+# Copy to backend.tf, set bucket/region, then: terraform init -migrate-state
+terraform {
+  backend "s3" {
+    bucket       = "REPLACE-ME-terraform-state"
+    key          = "nitro-sandbox-eks/apps/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
+  }
+}

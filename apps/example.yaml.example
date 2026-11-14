@@ -1,0 +1,30 @@
+# Copy to apps/<name>.yaml (the file name becomes the app name: lowercase, digits, hyphens).
+# All fields except `mode` are optional; defaults are in modules/sandbox-workload/variables.tf.
+
+mode: isolated                 # isolated | confidential
+manage_deployment: true        # false = Terraform creates only the IAM role, Pod Identity,
+                               #         ServiceAccount (and KMS statements); you deploy the pods
+image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/my-api:1.0.0   # required if manage_deployment
+replicas: 2
+# command: ["/app/server"]
+# args: ["--listen", ":8080"]
+env:
+  LOG_LEVEL: info
+port: 8080                     # creates Service "<name>" (managed deployments)
+allow_ingress: true            # NetworkPolicy: allow ingress to `port` on pods labelled app=<name>
+
+cpu_request: 100m
+memory_request: 128Mi
+cpu_limit: 500m
+memory_limit: 512Mi
+run_as_user: 10001             # must be non-root
+# run_as_group: 10001          # required for confidential apps (genpolicy assumes 0 otherwise)
+
+iam_policy_arns: []            # managed policies for this app's own role
+# iam_policy_json: '{"Version":"2012-10-17","Statement":[...]}'
+kms_decrypt: false             # isolated only
+
+# Confidential only:
+# cedar_policy_base64: <genpolicy output>     # required if manage_deployment
+# expected_pcr17:                             # accepted PCR17 values (two during a rollout)
+#   - <96 hex chars>

@@ -1,0 +1,5 @@
+mode: isolated
+image: public.ecr.aws/nginx/nginx-unprivileged:alpine
+port: 8080
+allow_ingress: true
+run_as_user: 101

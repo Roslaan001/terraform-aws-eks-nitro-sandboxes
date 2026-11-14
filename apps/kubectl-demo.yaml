@@ -1,0 +1,17 @@
+# ==============================================================================
+# REFERENCE WORKLOAD: Identity-Slot Only (kubectl / Helm Deployment)
+# ==============================================================================
+# NOTE: apps/main.tf automatically discovers and deploys EVERY *.yaml file in
+# this directory. This file serves as a reference implementation for workload
+# identity provisioning without creating the Kubernetes Deployment / Service
+# (Terraform creates IAM Role, Pod Identity, and ServiceAccount; pods are
+# deployed separately via kubectl or CI/CD).
+#
+# - To deploy your own workload: add your own `<name>.yaml` file here.
+# - To skip deploying this demo: delete this file or rename it to .yaml.example.
+# ==============================================================================
+
+mode: isolated
+manage_deployment: false
+port: 8080
+allow_ingress: true
