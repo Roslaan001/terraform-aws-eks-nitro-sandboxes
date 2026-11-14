@@ -23,7 +23,7 @@ CLUSTER_NAME="${2:-nitro-sandbox-eks}"
 REGION="${3:-us-east-1}"
 SERVICE_ACCOUNT="${SERVICE_ACCOUNT:-sandbox-workload-sa}"
 FRESH_POD_IMAGE="${FRESH_POD_IMAGE:-public.ecr.aws/aws-cli/aws-cli:2.27.50}"
-TF_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+TF_DIR="$(cd "$(dirname "$0")/../platform" && pwd)"
 FAILURES=0
 WARNINGS=0
 
@@ -95,7 +95,7 @@ Architectural Boundary Note:
   memory-protection technology used by confidential sandboxes.
   KMS recipient-attestation enforcement is verified structurally (policy content).
   End-to-end attested decrypt is PARTIALLY VERIFIED by this script (structure and
-  configuration only). The live in-guest test is manual: see tests/attestation-e2e/.
+  configuration only). The live in-guest test is manual: see examples/attestation-e2e/.
 ========================================================================
 EOF
   exit 0
