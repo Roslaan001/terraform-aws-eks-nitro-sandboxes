@@ -35,7 +35,7 @@ Verify the archive before use:
 
 1. **Disposable key.** Create a symmetric KMS key. Its key policy is the production key
    policy with **only** the PCR17 value replaced (set in step 4). Never point this test at
-   the production key or edit `kms.tf`.
+   the production key or edit `platform/kms.tf`.
 2. **Build and encrypt.** Every layer must be encrypted. Stage the image as a gzip OCI
    layout first. Encrypting straight from `containers-storage:` records the uncompressed
    digest, and the agent rejects it with `blob digest mismatch`.
