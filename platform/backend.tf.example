@@ -1,0 +1,17 @@
+# Remote state for shared or production use.
+#
+# 1. Create a versioned, encrypted S3 bucket for state (once, outside this configuration).
+# 2. Copy this file to backend.tf and set bucket/key/region.
+# 3. Move existing local state into it:  terraform init -migrate-state
+#
+# use_lockfile (S3-native state locking) needs Terraform >= 1.10. On older versions,
+# remove it and set dynamodb_table to a DynamoDB table with a "LockID" string hash key.
+terraform {
+  backend "s3" {
+    bucket       = "REPLACE-ME-terraform-state"
+    key          = "nitro-sandbox-eks/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
+  }
+}
