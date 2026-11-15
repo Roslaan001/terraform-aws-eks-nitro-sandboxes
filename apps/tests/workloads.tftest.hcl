@@ -7,6 +7,12 @@ mock_provider "aws" {
       partition = "aws"
     }
   }
+  mock_data "aws_region" {
+    defaults = {
+      name   = "us-east-1"
+      region = "us-east-1"
+    }
+  }
   mock_data "aws_caller_identity" {
     defaults = {
       account_id = "123456789012"
@@ -404,4 +410,42 @@ run "reject_mode_not_enabled" {
   }
 
   expect_failures = [kubernetes_service_account_v1.this]
+}
+
+# ---------------- Module: top-level HCL variable invocation (no config object, no explicit account/region/kms) ----------------
+
+run "module_toplevel_variables_standalone" {
+  command = plan
+
+  module {
+    source = "../modules/sandbox-workload"
+  }
+
+  variables {
+    name          = "standalone-app"
+    namespace     = "nitro-sandboxes"
+    sandbox_modes = ["isolated"]
+    cluster_name  = "test-nitro-eks"
+    mode          = "isolated"
+    image         = "public.ecr.aws/nginx/nginx-unprivileged:alpine"
+    replicas      = 3
+    port          = 8080
+    allow_ingress = true
+    # Notice: config, account_id, aws_region, and kms_key_arn are completely omitted!
+  }
+
+  assert {
+    condition     = output.service_account == "standalone-app"
+    error_message = "ServiceAccount output must match standalone name."
+  }
+
+  assert {
+    condition     = output.manifest.spec.replicas == 3
+    error_message = "Replicas from top-level variables must reach manifest."
+  }
+
+  assert {
+    condition     = output.kms_key_arn == null
+    error_message = "Isolated workloads must have null KMS key ARN."
+  }
 }

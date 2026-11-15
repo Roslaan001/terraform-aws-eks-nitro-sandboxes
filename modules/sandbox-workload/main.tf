@@ -25,9 +25,59 @@ terraform {
   }
 }
 
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+
 locals {
-  w    = var.config
-  mode = var.config.mode
+  account_id = var.account_id != null ? var.account_id : data.aws_caller_identity.current.account_id
+  aws_region = var.aws_region != null ? var.aws_region : try(data.aws_region.current.region, data.aws_region.current.name)
+
+  # Support both top-level variables and var.config (for YAML ingestion)
+  use_config = var.config != null
+
+  mode                = local.use_config ? coalesce(var.config.mode, var.mode) : var.mode
+  manage_deployment   = local.use_config ? coalesce(var.config.manage_deployment, var.manage_deployment) : var.manage_deployment
+  image               = local.use_config ? (var.config.image != null ? var.config.image : var.image) : var.image
+  replicas            = local.use_config ? coalesce(var.config.replicas, var.replicas) : var.replicas
+  command             = local.use_config ? (var.config.command != null ? var.config.command : var.command) : var.command
+  args                = local.use_config ? (var.config.args != null ? var.config.args : var.args) : var.args
+  env                 = local.use_config ? (var.config.env != null ? var.config.env : var.env) : var.env
+  port                = local.use_config ? (var.config.port != null ? var.config.port : var.port) : var.port
+  allow_ingress       = local.use_config ? coalesce(var.config.allow_ingress, var.allow_ingress) : var.allow_ingress
+  cpu_request         = local.use_config ? coalesce(var.config.cpu_request, var.cpu_request) : var.cpu_request
+  memory_request      = local.use_config ? coalesce(var.config.memory_request, var.memory_request) : var.memory_request
+  cpu_limit           = local.use_config ? coalesce(var.config.cpu_limit, var.cpu_limit) : var.cpu_limit
+  memory_limit        = local.use_config ? coalesce(var.config.memory_limit, var.memory_limit) : var.memory_limit
+  run_as_user         = local.use_config ? coalesce(var.config.run_as_user, var.run_as_user) : var.run_as_user
+  run_as_group        = local.use_config ? (var.config.run_as_group != null ? var.config.run_as_group : var.run_as_group) : var.run_as_group
+  iam_policy_arns     = local.use_config ? (var.config.iam_policy_arns != null ? var.config.iam_policy_arns : var.iam_policy_arns) : var.iam_policy_arns
+  iam_policy_json     = local.use_config ? (var.config.iam_policy_json != null ? var.config.iam_policy_json : var.iam_policy_json) : var.iam_policy_json
+  kms_decrypt         = local.use_config ? coalesce(var.config.kms_decrypt, var.kms_decrypt) : var.kms_decrypt
+  cedar_policy_base64 = local.use_config ? (var.config.cedar_policy_base64 != null ? var.config.cedar_policy_base64 : var.cedar_policy_base64) : var.cedar_policy_base64
+  expected_pcr17      = local.use_config ? (var.config.expected_pcr17 != null ? var.config.expected_pcr17 : var.expected_pcr17) : var.expected_pcr17
+
+  w = {
+    mode                = local.mode
+    manage_deployment   = local.manage_deployment
+    image               = local.image
+    replicas            = local.replicas
+    command             = local.command
+    args                = local.args
+    env                 = local.env
+    port                = local.port
+    allow_ingress       = local.allow_ingress
+    cpu_request         = local.cpu_request
+    memory_request      = local.memory_request
+    cpu_limit           = local.cpu_limit
+    memory_limit        = local.memory_limit
+    run_as_user         = local.run_as_user
+    run_as_group        = local.run_as_group
+    iam_policy_arns     = local.iam_policy_arns
+    iam_policy_json     = local.iam_policy_json
+    kms_decrypt         = local.kms_decrypt
+    cedar_policy_base64 = local.cedar_policy_base64
+    expected_pcr17      = local.expected_pcr17
+  }
 
   labels = {
     app                           = var.name
@@ -99,8 +149,8 @@ resource "aws_iam_role" "this" {
         Principal = { Service = "pods.eks.amazonaws.com" }
         Action    = ["sts:AssumeRole", "sts:TagSession"]
         Condition = {
-          StringEquals = { "aws:SourceAccount" = var.account_id }
-          ArnEquals    = { "aws:SourceArn" = "arn:${var.partition}:eks:${var.aws_region}:${var.account_id}:cluster/${var.cluster_name}" }
+          StringEquals = { "aws:SourceAccount" = local.account_id }
+          ArnEquals    = { "aws:SourceArn" = "arn:${var.partition}:eks:${local.aws_region}:${local.account_id}:cluster/${var.cluster_name}" }
         }
       }
     ]
@@ -135,7 +185,7 @@ resource "aws_kms_key" "this" {
       {
         Sid       = "EnableIAMUserPermissions"
         Effect    = "Allow"
-        Principal = { AWS = "arn:${var.partition}:iam::${var.account_id}:root" }
+        Principal = { AWS = "arn:${var.partition}:iam::${local.account_id}:root" }
         Action    = "kms:*"
         Resource  = "*"
       },
@@ -197,7 +247,7 @@ resource "aws_iam_role_policy" "base" {
           Sid      = "AllowCloudWatchLogs"
           Effect   = "Allow"
           Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
-          Resource = "arn:${var.partition}:logs:${var.aws_region}:${var.account_id}:log-group:/aws/eks/${var.cluster_name}/sandboxes/*"
+          Resource = "arn:${var.partition}:logs:${local.aws_region}:${local.account_id}:log-group:/aws/eks/${var.cluster_name}/sandboxes/*"
         }
       ],
       local.w.kms_decrypt ? [
@@ -210,6 +260,13 @@ resource "aws_iam_role_policy" "base" {
       ] : []
     )
   })
+
+  lifecycle {
+    precondition {
+      condition     = !local.w.kms_decrypt || (var.kms_key_arn != null && length(var.kms_key_arn) > 0)
+      error_message = "kms_key_arn must be provided when kms_decrypt is enabled on workload '${var.name}'."
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "custom" {
@@ -251,6 +308,34 @@ resource "kubernetes_service_account_v1" "this" {
     precondition {
       condition     = contains(var.sandbox_modes, local.mode)
       error_message = "Workload '${var.name}' uses mode '${local.mode}', which is not in sandbox_modes."
+    }
+
+    precondition {
+      condition     = !local.w.manage_deployment || (local.w.image != null && length(local.w.image) > 0)
+      error_message = "Workload '${var.name}' has manage_deployment = true, so image must be specified."
+    }
+
+    precondition {
+      condition     = !local.w.allow_ingress || local.w.port != null
+      error_message = "Workload '${var.name}' has allow_ingress = true, so port must be specified."
+    }
+
+    precondition {
+      condition = local.mode != "confidential" || (
+        length(local.w.expected_pcr17) > 0 &&
+        alltrue([for p in local.w.expected_pcr17 : can(regex("^[0-9a-fA-F]{96}$", p))]) &&
+        !local.w.kms_decrypt
+      )
+      error_message = "Confidential workload '${var.name}' requires at least one 96-hex expected_pcr17, and kms_decrypt must be false."
+    }
+
+    precondition {
+      condition = local.mode != "confidential" || !local.w.manage_deployment || (
+        local.w.image != null && can(regex("@sha256:[0-9a-f]{64}$", local.w.image)) &&
+        local.w.cedar_policy_base64 != null && length(local.w.cedar_policy_base64) > 0 &&
+        local.w.run_as_group != null
+      )
+      error_message = "Managed confidential workload '${var.name}' requires image pinned by @sha256 digest, cedar_policy_base64, and run_as_group."
     }
   }
 }
