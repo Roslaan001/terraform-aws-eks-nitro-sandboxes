@@ -34,3 +34,6 @@ terraform.rc
 tfplan
 *.test.log
 /tmp/
+
+# Local documentation drafts
+docs/

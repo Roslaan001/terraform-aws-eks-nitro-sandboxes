@@ -41,7 +41,8 @@ Announced in November 2026 ([AWS What's New Announcement](https://aws.amazon.com
 This repository delivers:
 - **Amazon EKS Auto Mode Infrastructure**: Clean Terraform implementation leveraging built-in `RuntimeClass` resources (`isolated-sandbox` and `confidential-sandbox`), least-privilege IAM, envelope KMS encryption with CloudWatch integration, and Kubernetes NetworkPolicies.
 - **Hardware-Enforced Workload Isolation**: Ready-to-deploy isolated and confidential workloads featuring Cedar policy integration, and KMS key policies gated on PCR17/PCR8 attestation (used for decrypting encrypted container images inside the guest).
-- **Your Applications**: A separate Terraform stack in `apps/` with one YAML file per app. Each app gets its own IAM role through EKS Pod Identity (and, for confidential apps, its own PCR17/PCR8-gated KMS statements). Terraform can deploy the app, or create only its identity so the team deploys with kubectl, Helm or GitOps.
+- **Reusable Sandbox Workload Module (`modules/sandbox-workload`)**: A standalone, production-ready Terraform module for provisioning sandboxed workloads with dedicated EKS Pod Identity roles, NetworkPolicies, and per-workload attestation-gated KMS keys. Supports both direct HCL invocation and file-driven (YAML) workflows.
+- **Application Stack (`apps/`)**: A separate Terraform stack with one YAML file per app (`apps/<name>.yaml`). Terraform can deploy the app, or create only its identity so the team deploys with kubectl, Helm or GitOps.
 - **Automated Validation Suite**: Native Terraform tests (`terraform test`), static validation, and operational verification scripts (`scripts/verify_sandbox.sh`).
 
 ---
@@ -245,7 +246,8 @@ In **confidential mode**, workloads require a reproducible Cedar policy generate
 │   ├── main.tf, variables.tf, outputs.tf  # Finds the platform by name; one module per app
 │   ├── backend.tf.example     # S3 remote state template (separate key)
 │   └── tests/                 # Mocked tests for the stack and the module
-├── modules/sandbox-workload/  # Per-app IAM role, KMS key (confidential), Pod Identity, ServiceAccount, Deployment, Service, NetworkPolicy
+├── modules/sandbox-workload/  # Standalone reusable module: IAM role, KMS key, Pod Identity,
+│                              #   ServiceAccount, Deployment, Service, NetworkPolicy (see modules/sandbox-workload/README.md)
 ├── scripts/verify_sandbox.sh  # Live verification of the platform (nine checks)
 ├── examples/attestation-e2e/  # Manual end-to-end KMS recipient-attestation test
 ├── .github/workflows/ci.yml   # fmt, validate, TFLint, Trivy and terraform test (both stacks)
@@ -453,9 +455,60 @@ expected_pcr17: ["<genpolicy predicted PCR17>"]
 
 Any change to the pod spec (image digest, env, command, ports, resources, user/group) changes PCR17. Add the new value next to the old one, apply, roll out, then remove the old value. KMS access for confidential apps goes only through the attested path (encrypted images, [§5](#5-cedar-policy--attestation-workflow)); `kms_decrypt` is rejected for them.
 
-#### Defining apps in HCL instead
+#### Using `modules/sandbox-workload` Directly in Terraform
 
-Instead of a YAML file, an app can be an entry in the `workloads` variable (same fields, HCL syntax), for example in a `*.tfvars` file. A name used in both places is an error. The per-app logic is the local module `modules/sandbox-workload`.
+Beyond file-driven YAML workflows, `modules/sandbox-workload` is designed to be **directly consumed in standard Terraform configurations** (either locally or via remote Git sourcing). It supports top-level variables and automatically discovers AWS account ID and region context:
+
+```hcl
+module "my_sandbox_workload" {
+  source = "github.com/Roslaan001/terraform-aws-eks-nitro-sandboxes//modules/sandbox-workload"
+
+  cluster_name  = "nitro-sandbox-eks"
+  namespace     = "nitro-sandboxes"
+  sandbox_modes = ["isolated"]
+  name          = "worker-service"
+  mode          = "isolated"
+
+  image         = "public.ecr.aws/nginx/nginx-unprivileged:alpine"
+  replicas      = 2
+  port          = 8080
+  allow_ingress = true
+  run_as_user   = 101
+
+  iam_policy_arns = [
+    "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+  ]
+}
+```
+
+For confidential workloads requiring hardware attestation, specify `mode = "confidential"`, the pinned image digest, `run_as_group`, `cedar_policy_base64`, and `expected_pcr17`:
+
+```hcl
+module "confidential_worker" {
+  source = "github.com/Roslaan001/terraform-aws-eks-nitro-sandboxes//modules/sandbox-workload"
+
+  cluster_name  = "nitro-sandbox-eks"
+  namespace     = "nitro-sandboxes"
+  sandbox_modes = ["isolated", "confidential"]
+  name          = "conf-worker"
+  mode          = "confidential"
+
+  image               = "public.ecr.aws/nginx/nginx-unprivileged@sha256:a77f1af2603df07bbf73221721393ab5d687de83462106937143e86460514f1e"
+  replicas            = 1
+  port                = 8080
+  allow_ingress       = true
+  run_as_user         = 101
+  run_as_group        = 101
+  cedar_policy_base64 = "<genpolicy_base64>"
+  expected_pcr17      = ["<96_hex_chars>"]
+}
+```
+
+For identity-only management (deploying pods separately with Helm or GitOps), set `manage_deployment = false`.
+
+> **Provider Rule for Callers**: As detailed in [`modules/sandbox-workload/README.md`](modules/sandbox-workload/README.md), configure your `kubernetes` provider from a `data "aws_eks_cluster"` data source (not an `aws_eks_cluster` resource) to prevent circular dependency deadlocks with KMS key policies. Full module input/output definitions are documented in the [module README](modules/sandbox-workload/README.md).
+
+Alternatively, within the `apps/` stack, you can define workloads in HCL using the `workloads` variable map (e.g. in `terraform.tfvars`), which merges alongside any `*.yaml` files.
 
 #### Notes
 
